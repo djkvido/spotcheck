@@ -44,7 +44,7 @@ jobs:
       - name: Build FFmpeg
         if: steps.cache.outputs.cache-hit != 'true'
         run: bash packaging/build_ffmpeg.sh ${{ matrix.target }} ffmpeg-${{ matrix.target }}
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: ffmpeg-${{ matrix.target }}
           path: ffmpeg-${{ matrix.target }}
@@ -83,7 +83,7 @@ jobs:
           & "$dir/tools/ffmpeg.exe" -hide_banner -muxers | Select-String chromaprint
           if ($LASTEXITCODE -ne 0) { exit 1 }
           Start-Process "$dir/unins000.exe" -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES" -Wait
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: installer-windows
           path: dist/*-setup.exe
@@ -115,7 +115,7 @@ jobs:
           codesign --verify --deep --strict "$app"
           "$app/Contents/Resources/runtime/bin/python3" -I -m spotcheck --packaged --home "$RUNNER_TEMP/home" --setup
           hdiutil detach /Volumes/SpotCheck
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: installer-macos
           path: dist/*.dmg
