@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SpotCheck</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%2322262c'/%3E%3Cpath d='M7 13v6M11 9.5v13M15 13.5v5' stroke='%239aa0a9' stroke-width='2.2' stroke-linecap='round'/%3E%3Cpath d='M17 17.5l3.5 3.5 6.5-8.5' fill='none' stroke='%23ff9328' stroke-width='2.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/static/app.css">
+<script src="/static/theme.js"></script>
+</head>
+<body>
+<div class="app">
+  <header class="statusbar">
+    <div class="brand">
+      <svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="9" fill="#22262c" stroke="rgba(255,255,255,.08)"/><path d="M7 13v6M11 9.5v13M15 13.5v5" stroke="#9aa0a9" stroke-width="2.2" stroke-linecap="round"/><path d="M17 17.5l3.5 3.5 6.5-8.5" fill="none" stroke="#ff9328" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span class="word">Spot<b>Check</b></span>
+    </div>
+    <button class="project-switch" id="btn-project" type="button" data-i18n-title="project.switchTitle">
+      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+      <span class="text"><span class="caption" data-i18n="project.label">Project</span><span class="name" id="project-name">–</span></span>
+      <svg class="icon sm" viewBox="0 0 24 24" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+    </button>
+    <div class="search">
+      <svg class="icon sm" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <label class="sr-only" for="search" data-i18n="app.searchLabel">Search</label>
+      <input id="search" type="search" data-i18n-placeholder="app.search" placeholder="Search tracks, artists, albums…" autocomplete="off">
+      <kbd aria-hidden="true">/</kbd>
+    </div>
+    <div class="spacer"></div>
+    <div class="sysinfo" id="sysinfo" aria-live="polite"></div>
+    <div class="toolbelt">
+      <button class="icon-btn" id="btn-help" type="button" data-i18n-title="app.help" data-i18n-aria="app.help"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></button>
+      <button class="icon-btn text" id="btn-lang" type="button" data-i18n="app.languageSwitch" data-i18n-title="app.languageTitle" data-i18n-aria="app.languageTitle">CS</button>
+      <button class="icon-btn" id="btn-theme" type="button" data-i18n-title="app.theme" data-i18n-aria="app.theme"><svg class="icon" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg></button>
+      <button class="icon-btn" id="btn-settings" type="button" data-i18n-title="app.settings" data-i18n-aria="app.settings"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
+      <button class="icon-btn" id="btn-quit" type="button" data-i18n-title="app.quit" data-i18n-aria="app.quit"><svg class="icon" viewBox="0 0 24 24"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg></button>
+    </div>
+  </header>
+  <div class="statusline" id="statusline" role="status" aria-live="polite"></div>
+  <div class="banner" id="banner" role="alert"></div>
+
+  <div class="shell">
+    <nav class="panel playlists" data-i18n-aria="app.playlists">
+      <div class="panel-head">
+        <h2 class="label" data-i18n="app.playlists">Playlists</h2>
+        <button class="icon-btn" type="button" data-action="sync" data-i18n-title="action.syncAll" data-i18n-aria="action.syncAll"><svg class="icon sm" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg></button>
+      </div>
+      <button class="btn primary add-pl" type="button" data-action="add"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span data-i18n="app.addPlaylist">Add playlist</span></button>
+      <div class="pl-list" id="playlists"></div>
+    </nav>
+
+    <main class="main" id="main"></main>
+
+    <aside class="rail">
+      <section class="panel activity" id="activity" aria-live="polite"></section>
+      <section class="panel health" id="health"></section>
+      <section class="panel health quality" id="quality"></section>
+      <section class="panel log-panel">
+        <div class="panel-head"><h2 class="label" data-i18n="dock.log">Log</h2></div>
+        <div class="log" id="log" role="log"></div>
+      </section>
+    </aside>
+  </div>
+</div>
+
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="drawer" data-i18n-aria="drawer.label"></aside>
+
+<dialog id="dlg-add" aria-labelledby="dlg-add-title">
+  <div class="dlg-head"><h2 id="dlg-add-title" data-i18n="add.title">Add playlist</h2><button class="icon-btn" type="button" data-close data-i18n-aria="app.close"><svg class="icon" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+  <div class="dlg-body">
+    <p class="page-intro" data-i18n="add.text">Paste links to Spotify playlists or albums, one per line.</p>
+    <label class="sr-only" for="add-urls" data-i18n="add.label">Links</label>
+    <textarea id="add-urls" placeholder="https://open.spotify.com/playlist/…&#10;https://www.youtube.com/playlist?list=…&#10;https://soundcloud.com/…/sets/…" spellcheck="false"></textarea>
+    <ul class="url-list" id="add-check"></ul>
+    <p class="hint" data-i18n="add.sourcesNote">Tracks of YouTube, SoundCloud and Bandcamp playlists are matched with the official release on Deezer.</p>
+    <label class="check-row"><input type="checkbox" id="add-follow" checked><span><span data-i18n="add.follow">Then download, check and verify the tracks</span><span class="hint" data-i18n="add.followHint">Without this, playlists are only loaded and you start processing yourself.</span></span></label>
+  </div>
+  <div class="dlg-foot"><button class="btn" type="button" data-close data-i18n="app.cancel">Cancel</button><button class="btn primary" type="button" id="add-submit" data-i18n="add.submit">Load</button></div>
+</dialog>
+
+<dialog id="dlg-sync" aria-labelledby="dlg-sync-title">
+  <div class="dlg-head"><h2 id="dlg-sync-title" data-i18n="sync.title">Update from Spotify</h2><button class="icon-btn" type="button" data-close data-i18n-aria="app.close"><svg class="icon" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+  <div class="dlg-body">
+    <p class="page-intro" data-i18n="sync.text">SpotCheck loads the current track list from Spotify. New tracks are added, removed tracks disappear from the list. Downloaded files always stay on disk.</p>
+    <div class="choice" id="sync-scope"></div>
+    <label class="check-row"><input type="checkbox" id="sync-follow" checked><span><span data-i18n="sync.follow">Then download and verify new tracks</span></span></label>
+  </div>
+  <div class="dlg-foot"><button class="btn" type="button" data-close data-i18n="app.cancel">Cancel</button><button class="btn primary" type="button" id="sync-submit" data-i18n="sync.submit">Update</button></div>
+</dialog>
+
+<dialog id="dlg-export" aria-labelledby="dlg-export-title">
+  <div class="dlg-head"><h2 id="dlg-export-title" data-i18n="export.title">Export</h2><button class="icon-btn" type="button" data-close data-i18n-aria="app.close"><svg class="icon" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+  <div class="dlg-body">
+    <p class="page-intro" data-i18n="export.text">Take playlists with you.</p>
+    <p class="f-label" data-i18n="export.what">Which playlists</p>
+    <div class="choice" id="export-scope"></div>
+    <p class="f-label" data-i18n="export.where">Where to</p>
+    <div class="choice">
+      <label><input type="radio" name="export-mode" value="music" checked><span><b data-i18n="export.music">Next to the songs</b><small data-i18n="export.musicSub"></small></span></label>
+      <label><input type="radio" name="export-mode" value="copy"><span><b data-i18n="export.copy">Copy into another folder</b><small data-i18n="export.copySub"></small></span></label>
+    </div>
+    <div class="export-copy" id="export-copy" hidden>
+      <label class="f-label" for="export-target" data-i18n="export.folder">Target folder</label>
+      <div class="path-row"><input type="text" id="export-target" spellcheck="false" autocomplete="off" placeholder="E:\Music"><button class="btn" type="button" id="export-browse" data-i18n="project.browse">Browse…</button></div>
+      <p class="error" id="export-error" role="alert"></p>
+      <label class="check-row"><input type="checkbox" id="export-number"><span data-i18n="export.number">Number the files</span></label>
+    </div>
+    <label class="check-row"><input type="checkbox" id="export-open" checked><span data-i18n="export.open">Open the folder when done</span></label>
+  </div>
+  <div class="dlg-foot"><button class="btn start" type="button" id="export-csv" data-i18n="export.csv" data-i18n-title="export.csvTitle">CSV report</button><button class="btn" type="button" data-close data-i18n="app.cancel">Cancel</button><button class="btn primary" type="button" id="export-submit" data-i18n="export.submit">Export</button></div>
+</dialog>
+
+<dialog id="dlg-settings" class="wide" aria-labelledby="dlg-settings-title">
+  <div class="dlg-head"><h2 id="dlg-settings-title" data-i18n="app.settings">Settings</h2><button class="icon-btn" type="button" id="settings-close" data-i18n-aria="app.close"><svg class="icon" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+  <div class="split">
+    <div class="nav">
+      <input type="search" id="settings-search" data-i18n-placeholder="settings.search" placeholder="Search settings…" autocomplete="off">
+      <div class="nav-list" id="settings-nav" role="tablist"></div>
+    </div>
+    <div class="page" id="settings-page" role="tabpanel"></div>
+  </div>
+  <div class="dlg-foot"><button class="btn start" type="button" id="settings-reset" data-i18n="settings.reset">Restore defaults</button><button class="btn" type="button" id="settings-cancel" data-i18n="app.cancel">Cancel</button><button class="btn primary" type="button" id="settings-save" data-i18n="app.save">Save</button></div>
+</dialog>
+
+<dialog id="dlg-projects" class="wide" aria-labelledby="dlg-projects-title">
+  <div class="dlg-head"><h2 id="dlg-projects-title" data-i18n="project.title">Projects</h2><button class="icon-btn" type="button" data-close data-i18n-aria="app.close"><svg class="icon" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+  <div class="split">
+    <div class="nav">
+      <div class="nav-list" id="projects-nav"></div>
+      <div class="nav-foot">
+        <button class="btn primary" type="button" id="project-new" data-i18n="project.new">New project</button>
+        <button class="btn" type="button" id="project-import" data-i18n="project.import">Open from file…</button>
+        <input type="file" id="project-file" accept=".json,application/json" hidden>
+      </div>
+    </div>
+    <div class="page" id="projects-page"></div>
+  </div>
+</dialog>
+
+<dialog id="dlg-help" class="wide" aria-labelledby="dlg-help-title">
+  <div class="dlg-head"><h2 id="dlg-help-title" data-i18n="help.title">How SpotCheck works</h2><button class="icon-btn" type="button" data-close data-i18n-aria="app.close"><svg class="icon" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+  <div class="split">
+    <div class="nav"><div class="nav-list" id="help-nav"></div></div>
+    <div class="page help" id="help-page"></div>
+  </div>
+</dialog>
+
+<dialog id="dlg-terms" aria-labelledby="dlg-terms-title">
+  <div class="dlg-head"><h2 id="dlg-terms-title" data-i18n="terms.title">Before you start</h2><button class="icon-btn text" type="button" id="terms-lang" data-i18n="app.languageSwitch" data-i18n-title="app.languageTitle" data-i18n-aria="app.languageTitle">CS</button></div>
+  <div class="dlg-body confirm-body">
+    <p data-i18n="terms.intro">Please read the Terms of Use.</p>
+    <ul>
+      <li data-i18n="terms.personal"></li>
+      <li data-i18n="terms.responsible"></li>
+      <li data-i18n="terms.openSource"></li>
+      <li data-i18n="terms.local"></li>
+      <li data-i18n="terms.warranty"></li>
+    </ul>
+    <p><a id="terms-link" href="https://github.com/djkvido/spotcheck/blob/main/TERMS.md" target="_blank" rel="noopener" data-i18n="terms.read">Read the full Terms of Use</a></p>
+    <label class="check-row"><input type="checkbox" id="terms-agree"><span data-i18n="terms.agree">I have read the Terms of Use and agree to them</span></label>
+  </div>
+  <div class="dlg-foot"><button class="btn" type="button" id="terms-decline" data-i18n="terms.decline">I do not agree</button><button class="btn primary" type="button" id="terms-accept" data-i18n="terms.accept" disabled>Agree and continue</button></div>
+</dialog>
+
+<dialog id="dlg-confirm" aria-labelledby="confirm-title">
+  <div class="dlg-head"><h2 id="confirm-title"></h2></div>
+  <div class="dlg-body confirm-body" id="confirm-body"></div>
+  <div class="dlg-foot"><button class="btn" type="button" id="confirm-cancel" data-i18n="app.cancel">Cancel</button><button class="btn primary" type="button" id="confirm-ok" data-i18n="app.continue">Continue</button></div>
+</dialog>
+
+<script src="/static/i18n.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>

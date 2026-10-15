@@ -1,0 +1,82 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "spotcheck"
+dynamic = ["version"]
+description = "Download tracks of Spotify, YouTube, SoundCloud and Bandcamp playlists and verify them by audio fingerprint and real sound quality."
+readme = "README.md"
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE"]
+authors = [{ name = "djkvido", email = "info@nsvtplayer.com" }]
+keywords = ["spotify", "spotdl", "youtube", "soundcloud", "yt-dlp", "music", "audio-fingerprint", "chromaprint", "ffmpeg", "playlist"]
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn>=0.32",
+    "yt-dlp[default]>=2026.07.04,<2027",
+    "mutagen>=1.47,<2",
+    "rapidfuzz>=3.10.1,<4",
+    "ytmusicapi>=1.12.1,<2",
+    "beautifulsoup4>=4.12.3,<5",
+    "datastar-py>=0.6.3",
+    "jinja2>=3.1.5",
+    "platformdirs>=4.3.6,<5",
+    "pydantic>=2.9.2,<3",
+    "pykakasi>=2.3,<3",
+    "python-multipart>=0.0.20",
+    "python-slugify[unidecode]>=8.0.4,<9",
+    "requests>=2.32.3,<3",
+    "rich>=13.9.4,<14",
+    "soundcloud-v2>=1.6,<2",
+    "spotipy>=2.26,<3",
+    "spotipyfree>=1.9.13,<2",
+    "syncedlyrics>=1.0.1,<2",
+    "websockets~=14.1",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Web Environment",
+    "Intended Audience :: End Users/Desktop",
+    "Natural Language :: Czech",
+    "Natural Language :: English",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Multimedia :: Sound/Audio :: Analysis",
+]
+
+[project.urls]
+Homepage = "https://github.com/djkvido/spotcheck"
+Repository = "https://github.com/djkvido/spotcheck"
+Issues = "https://github.com/djkvido/spotcheck/issues"
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6", "httpx2>=2.13", "pip-audit>=2.7"]
+
+[project.scripts]
+spotcheck = "spotcheck.__main__:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "spotcheck.__version__" }
+
+[tool.setuptools.packages.find]
+include = ["spotcheck*"]
+
+[tool.setuptools.package-data]
+spotcheck = ["static/*"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

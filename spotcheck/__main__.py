@@ -1,0 +1,176 @@
+from __future__ import annotations
+
+import argparse
+import json
+import logging
+import os
+import socket
+import threading
+import time
+import urllib.request
+import webbrowser
+from pathlib import Path
+
+from . import __version__, runtime
+from .config import configure
+
+SETUP_MESSAGES = {
+    "command": "$ {text}",
+    "output": "{text}",
+    "command_failed": "Command failed: {error}",
+    "ffmpeg_ready": "FFmpeg with chromaprint is already installed.",
+    "ffmpeg_not_on_path": "FFmpeg was installed but is not on PATH yet. Open a new terminal and run setup again.",
+    "ffmpeg_no_chromaprint": "This FFmpeg build has no chromaprint support. Install a full build (see README).",
+}
+
+
+def run_setup() -> int:
+    from . import deps
+
+    def log(level: str, code: str, **params: str) -> None:
+        prefix = "  ! " if level in ("warn", "error") else "    "
+        print(prefix + SETUP_MESSAGES.get(code, code).format(**params))
+
+    print("SpotCheck: checking dependencies\n")
+    if not runtime.packaged():
+        deps.ensure_spotdl(log)
+    state = deps.status(check_updates=False)
+    for item in state["items"]:
+        mark = "ok     " if item["installed"] else "missing"
+        print(f"  [{mark}] {item['name']:<14} {item['version'] or ''}")
+    print()
+    present = {i["key"]: i["installed"] for i in state["items"]}
+    if not runtime.packaged():
+        if not (present["ffmpeg"] and present["chromaprint"]):
+            print("Installing FFmpeg with chromaprint support...")
+            deps.install("ffmpeg", log)
+        if not present["deno"]:
+            print("Downloading Deno...")
+            deps.install("deno", log)
+        state = deps.status(check_updates=False)
+    required = {"spotdl", "yt-dlp", "ffmpeg", "chromaprint"}
+    ready = all(i["installed"] for i in state["items"] if i["key"] in required)
+    print("\n" + ("All set." if ready else "Some dependencies are missing; see the Dependencies panel in the app."))
+    return 0 if ready else 1
+
+
+def running_instance(host: str, port: int) -> bool:
+    try:
+        with urllib.request.urlopen(f"http://{host}:{port}/api/state", timeout=2) as r:
+            return "library" in json.loads(r.read().decode("utf-8"))
+    except (OSError, ValueError):
+        return False
+
+
+def request_quit(host: str, port: int) -> int | None:
+    request = urllib.request.Request(
+        f"http://{host}:{port}/api/quit", method="POST", data=b"{}", headers={"X-SpotCheck": "1"}
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=5) as r:
+            return int(json.loads(r.read().decode("utf-8")).get("pid") or 0)
+    except (OSError, ValueError):
+        return None
+
+
+def process_alive(pid: int) -> bool:
+    if os.name == "nt":
+        import ctypes
+
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.OpenProcess(0x00100000, False, pid)
+        if not handle:
+            return False
+        try:
+            return kernel32.WaitForSingleObject(handle, 0) == 0x102
+        finally:
+            kernel32.CloseHandle(handle)
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
+
+
+def quit_running(host: str, port: int, timeout: float = 15) -> bool:
+    pid = request_quit(host, port)
+    if pid is None:
+        return not running_instance(host, port)
+    deadline = time.monotonic() + timeout
+    while pid and process_alive(pid):
+        if time.monotonic() > deadline:
+            return False
+        time.sleep(0.2)
+    return True
+
+
+def free_port(host: str, preferred: int, attempts: int = 20) -> int | None:
+    for port in range(preferred, preferred + attempts):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            try:
+                probe.bind((host, port))
+            except OSError:
+                continue
+            return port
+    return None
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        prog="spotcheck",
+        description="Keep a local music library in order: load playlists, find their tracks and verify every file.",
+    )
+    parser.add_argument("--home", help="workspace directory (default: $SPOTCHECK_HOME or the current directory)")
+    parser.add_argument("--host", default="127.0.0.1", help="address to listen on (default: 127.0.0.1)")
+    parser.add_argument("--port", type=int, default=8765, help="port to listen on (default: 8765)")
+    parser.add_argument("--no-browser", action="store_true", help="do not open the browser")
+    parser.add_argument("--setup", action="store_true", help="check and install missing dependencies, then exit")
+    parser.add_argument("--quit", action="store_true", help="stop a running SpotCheck, then exit")
+    parser.add_argument("--packaged", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--version", action="version", version=f"spotcheck {__version__}")
+    args = parser.parse_args()
+
+    if args.quit:
+        raise SystemExit(0 if quit_running(args.host, args.port) else 1)
+
+    if args.packaged:
+        home = Path(args.home or runtime.user_home()).expanduser().resolve()
+        runtime.prepare(True, home)
+        paths = configure(home, first_music=None if args.home else runtime.user_music() / "My library")
+        runtime.log_to_file(paths.home)
+    else:
+        runtime.prepare(False)
+        logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+        configure(args.home)
+    if args.setup:
+        raise SystemExit(run_setup())
+
+    if running_instance(args.host, args.port):
+        url = f"http://{args.host}:{args.port}/"
+        print(f"SpotCheck is already running at {url}")
+        if not args.no_browser:
+            webbrowser.open(url)
+        return
+    port = free_port(args.host, args.port)
+    if port is None:
+        raise SystemExit(f"Ports {args.port}-{args.port + 19} are all in use. Choose another one with --port.")
+
+    import uvicorn
+
+    from .server import create_app
+
+    url = f"http://{args.host}:{port}/"
+    app = create_app()
+    config = uvicorn.Config(
+        app, host=args.host, port=port, log_level="warning", log_config=None, timeout_graceful_shutdown=2
+    )
+    server = uvicorn.Server(config)
+    app.state.shutdown = lambda: setattr(server, "should_exit", True)
+    if not args.no_browser:
+        threading.Timer(1.2, webbrowser.open, args=(url,)).start()
+    print(f"SpotCheck {__version__} is running at {url} (press Ctrl+C to stop)")
+    server.run()
+
+
+if __name__ == "__main__":
+    main()
