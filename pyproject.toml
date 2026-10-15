@@ -14,7 +14,7 @@ keywords = ["spotify", "spotdl", "youtube", "soundcloud", "yt-dlp", "music", "au
 requires-python = ">=3.10"
 dependencies = [
     "fastapi>=0.115",
-    "uvicorn>=0.32",
+    "uvicorn>=0.54.0",
     "yt-dlp[default]>=2026.07.04,<2027",
     "mutagen>=1.47,<2",
     "rapidfuzz>=3.10.1,<4",
