@@ -145,8 +145,9 @@ https://www.youtube.com/watch?v=fOoFshzL0k0"""
         "https://www.youtube.com/playlist?list=PL8nmK",
         "https://soundcloud.com/the-band/sets/the-ep",
         "https://artist.bandcamp.com/album/first-light",
+        "https://www.youtube.com/watch?v=fOoFshzL0k0",
     ]
-    assert rejected == ["https://www.youtube.com/watch?v=fOoFshzL0k0"]
+    assert rejected == []
 
 
 def test_file_settings_are_validated(client):

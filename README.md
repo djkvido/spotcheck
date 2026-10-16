@@ -30,6 +30,7 @@ Checking a whole library by ear takes hours. SpotCheck checks every file against
 ## Features
 
 - **Playlists from several services:** Spotify playlists and albums (through spotDL), YouTube and YouTube Music playlists, SoundCloud sets and Bandcamp albums (through yt-dlp). Tracks of the latter are matched with the official release on Deezer, so their length and preview are verified like Spotify tracks.
+- **Single songs** from Spotify, YouTube, SoundCloud and Bandcamp: paste the link of one song and it is collected in the **Singles** list, in its own folder, and checked like every other track.
 - **Downloads** into one folder per playlist, with tags and cover art. Choose **Opus** or **M4A** to keep YouTube's own stream without re-encoding, or **MP3** at a bitrate of your choice.
 - **Real sound quality:** SpotCheck measures where each file's spectrum ends, which is where the encoder cut off the high frequencies, and flags low-quality sources and files whose bitrate was inflated from a worse source. Among candidates of the same recording, the better sounding one wins.
 - **Verification against the official preview** from Deezer, with iTunes as a fallback. The preview is located inside your file by its [Chromaprint](https://acoustid.org/chromaprint) fingerprint, so you know whether it really is the same recording.
@@ -102,7 +103,7 @@ Run `spotcheck --help` for the other options (`--host`, `--port`, `--no-browser`
 
 ## Usage
 
-1. **Add a playlist.** Paste links to playlists or albums from Spotify, YouTube, YouTube Music, SoundCloud or Bandcamp; each link is checked before anything is loaded. By default the tracks are then downloaded, checked and verified straight away.
+1. **Add a playlist or a song.** Paste links to playlists or albums from Spotify, YouTube, YouTube Music, SoundCloud or Bandcamp; each link is checked before anything is loaded. A link to a single song goes to the **Singles** list. By default the tracks are then downloaded, checked and verified straight away.
 2. **Look at what is flagged.** Filter by *Needs review* or *Wrong*, or by a finding such as silence at the end, and click a track to open its details: your file at the matching position next to the official preview, the match curve, lengths, backups and links.
 3. **Review proposals.** When a better source is found, the track gets a *proposal* badge. Listen to it, then use it or reject it.
 4. **Let it run.** Playlists are updated from their sources every 24 hours and changed files are re-checked; the Activity card shows what is planned next. *Process all*, *Fix problems* and *Trim silence* are there when you want to act on the whole selection yourself.
@@ -138,7 +139,7 @@ A file converted from a low-quality source therefore shows a cut well below what
 | A player cannot open Opus files | Choose MP3 (320 kbps) or M4A in Settings › Files and quality. Files you already have stay as they are. |
 | Some tracks of a YouTube or SoundCloud playlist are missing | Private, deleted and preview-only tracks are skipped; the log lists how many. |
 | Tracks are never verified | Your FFmpeg build lacks chromaprint (see above). |
-| The link is marked as not supported | Only playlist and album links work: Spotify playlists and albums, YouTube and YouTube Music playlists, SoundCloud sets and Bandcamp albums. A single song, a YouTube Mix, Liked videos and Watch later cannot be added; open the playlist or album the song belongs to and paste that link. |
+| The link is marked as not supported | Playlists, albums and single songs of Spotify, YouTube, YouTube Music, SoundCloud and Bandcamp are accepted. A YouTube Mix, Liked videos and Watch later playlist cannot be added as a playlist; paste the link of a song from it instead. |
 | Nothing is loaded after adding a link | Open **Settings › About › Diagnostics** and create a report. It shows which component is missing and whether Spotify, YouTube and Deezer can be reached. The Log card and the file `spotcheck.log` (in the `logs` folder of the application data) show the reason of every failed load. |
 | Tracks with annotated titles are not found | Adjust the search templates in Settings. `{title}` is the title without annotations such as a version, tempo or dance style. |
 | iTunes previews are slow | Apple rate-limits its search API. Keep only Deezer enabled in Settings. |

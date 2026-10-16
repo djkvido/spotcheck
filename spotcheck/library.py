@@ -41,6 +41,9 @@ TRACK_DEFAULTS: dict[str, Any] = {
 }
 
 
+SINGLES_ID = "singles"
+
+
 def playlist_id(url: str) -> str:
     found = origins.classify(url)
     return found[1] if found else re.sub(r"\W+", "_", url)[:40]
@@ -225,6 +228,46 @@ class Library:
             self.save()
             return change
 
+    def add_singles(self, songs: list[dict]) -> dict[str, Any]:
+        with self.lock:
+            pl = self.playlist(SINGLES_ID)
+            new = pl is None
+            if pl is None:
+                pl = {
+                    "id": SINGLES_ID,
+                    "url": SINGLES_ID,
+                    "origin": SINGLES_ID,
+                    "name": origins.SINGLES_NAME,
+                    "folder": self._existing_folder(origins.SINGLES_NAME).name,
+                    "tracks": [],
+                    "added": time.time(),
+                }
+                self.data["playlists"].append(pl)
+            known = {t["id"] for t in pl["tracks"]}
+            added = []
+            for song in songs:
+                track = self.make_track(song, pl["name"])
+                if track["id"] in known:
+                    continue
+                known.add(track["id"])
+                track["number"] = len(pl["tracks"]) + 1
+                pl["tracks"].append(track)
+                added.append(track)
+            pl["synced"] = time.time()
+            self.save()
+            return {"playlist": pl, "new": new, "added": added, "removed": [], "old_name": pl["name"]}
+
+    def remove_single(self, key: str) -> bool:
+        with self.lock:
+            pl, tr = self.find_track(key)
+            if tr is None or pl.get("origin") != SINGLES_ID:
+                return False
+            pl["tracks"] = [t for t in pl["tracks"] if t["id"] != tr["id"]]
+            for number, track in enumerate(pl["tracks"], 1):
+                track["number"] = number
+            self.save()
+            return True
+
     def remove_playlist(self, pid: str) -> None:
         with self.lock:
             self.data["playlists"] = [p for p in self.data["playlists"] if p["id"] != pid]
@@ -313,7 +356,11 @@ class Library:
             return []
         limit = time.time() - hours * 3600
         with self.lock:
-            return [p["id"] for p in self.data["playlists"] if (p.get("synced") or p.get("added") or 0) < limit]
+            return [
+                p["id"]
+                for p in self.data["playlists"]
+                if p.get("origin") != SINGLES_ID and (p.get("synced") or p.get("added") or 0) < limit
+            ]
 
     def public(self) -> dict[str, Any]:
         with self.lock:

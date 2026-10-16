@@ -18,7 +18,7 @@ from typing import Any
 
 from . import analysis, deps, diagnostics, fileops, origins, sources, tags, terms
 from .config import paths
-from .library import AUDIO_SUFFIXES, Library, base_name, compute_status, folder_name, track_key
+from .library import AUDIO_SUFFIXES, SINGLES_ID, Library, base_name, compute_status, folder_name, track_key
 
 log = logging.getLogger(__name__)
 
@@ -975,7 +975,7 @@ class Engine:
         targets = list(urls or [])
         for pid in playlist_ids or []:
             pl = self.lib.playlist(pid)
-            if pl:
+            if pl and pl.get("origin") != SINGLES_ID:
                 targets.append(pl["url"])
         job["total"] = len(targets)
         loaded, added, removed, failed = 0, 0, 0, 0
@@ -985,6 +985,24 @@ class Engine:
             job["current"] = url
             self._emit_job(job)
             self.bus.log("info", "playlist_loading", url=url)
+            if origins.classify_track(url):
+                songs = self.load_track(url)
+                if not songs:
+                    failed += 1
+                    self.bus.log("error", "track_failed", url=url)
+                else:
+                    change = self.lib.add_singles(songs)
+                    self.lib.link_files()
+                    if change["playlist"]["id"] not in synced:
+                        synced.append(change["playlist"]["id"])
+                    loaded += 1
+                    added += len(change["added"])
+                    label = f"{songs[0]['artist']} - {songs[0]['name']}"
+                    self.bus.log("info", "track_added" if change["added"] else "track_known", name=label)
+                    self.bus.emit({"type": "library"})
+                job["done"] += 1
+                self._emit_job(job)
+                continue
             name, songs = self.load_playlist(url)
             if not songs:
                 failed += 1
@@ -1028,6 +1046,15 @@ class Engine:
                     only="missing",
                     flags=dict(FULL_PROCESS),
                 )
+
+    def load_track(self, url: str) -> list[dict]:
+        if (origins.classify_track(url) or ("",))[0] == "spotify":
+            return self.load_playlist(url)[1]
+        return origins.load_track(
+            url,
+            self.ytdlp_cmd(),
+            on_error=lambda code, detail: self.bus.log("warn", code, url=url, detail=diagnostics.short(detail)),
+        )
 
     def load_playlist(self, url: str) -> tuple[str, list[dict]]:
         if (origins.classify(url) or ("spotify",))[0] != "spotify":

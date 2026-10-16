@@ -19,6 +19,14 @@ YOUTUBE = re.compile(
 SOUNDCLOUD = re.compile(r"^https://(?:www\.|m\.)?soundcloud\.com/([A-Za-z0-9_-]+)/sets/([A-Za-z0-9_-]+)")
 BANDCAMP = re.compile(r"^https://([a-z0-9-]+)\.bandcamp\.com/album/([A-Za-z0-9_-]+)")
 YOUTUBE_PRIVATE = ("LL", "WL", "LM", "RD")
+SPOTIFY_TRACK = re.compile(r"^https://open\.spotify\.com/(?:intl-[a-z]+/)?track/([A-Za-z0-9]+)")
+YOUTUBE_VIDEO = re.compile(r"^https://(?:www\.|m\.|music\.)?youtube\.com/watch\?(?:\S*?&)?v=([A-Za-z0-9_-]{6,})")
+YOUTU_BE = re.compile(r"^https://youtu\.be/([A-Za-z0-9_-]{6,})")
+SOUNDCLOUD_TRACK = re.compile(
+    r"^https://(?:www\.|m\.)?soundcloud\.com/([A-Za-z0-9_-]+)/(?!sets(?:[/?#]|$))([A-Za-z0-9_-]+)"
+)
+BANDCAMP_TRACK = re.compile(r"^https://([a-z0-9-]+)\.bandcamp\.com/track/([A-Za-z0-9_-]+)")
+SINGLES_NAME = "Singles"
 
 TOPIC = re.compile(r"\s*-\s*topic$", re.I)
 CHANNEL_NOISE = re.compile(r"\s*(?:vevo|official(?:\s+channel)?|music)$", re.I)
@@ -48,6 +56,40 @@ def classify(url: str) -> tuple[str, str] | None:
     if m:
         return "bandcamp", f"bc-{m.group(1)}-{m.group(2)}"
     return None
+
+
+def classify_track(url: str) -> tuple[str, str] | None:
+    url = url.strip()
+    if classify(url):
+        return None
+    m = SPOTIFY_TRACK.match(url)
+    if m:
+        return "spotify", m.group(1)
+    m = YOUTUBE_VIDEO.match(url) or YOUTU_BE.match(url)
+    if m:
+        return "youtube", "yt-" + m.group(1)
+    m = SOUNDCLOUD_TRACK.match(url)
+    if m:
+        return "soundcloud", f"sc-{m.group(1)}-{m.group(2)}"
+    m = BANDCAMP_TRACK.match(url)
+    if m:
+        return "bandcamp", f"bc-{m.group(1)}-{m.group(2)}"
+    return None
+
+
+def canonical_track_url(url: str) -> str:
+    url = url.strip()
+    found = classify_track(url)
+    if not found:
+        return url
+    origin, ident = found
+    if origin == "spotify":
+        return f"https://open.spotify.com/track/{ident}"
+    if origin == "youtube":
+        music = urllib.parse.urlparse(url).hostname == "music.youtube.com"
+        return f"https://{'music' if music else 'www'}.youtube.com/watch?v={ident[3:]}"
+    parts = urllib.parse.urlsplit(url)
+    return urllib.parse.urlunsplit((parts.scheme, parts.netloc, parts.path, "", ""))
 
 
 def canonical_url(url: str) -> str:
@@ -167,6 +209,41 @@ def is_snippet(entry: dict) -> bool:
     host = url.hostname or ""
     soundcloud_cdn = host == "sndcdn.com" or host.endswith(".sndcdn.com")
     return "/preview/" in url.path or ((entry.get("duration") or 0) == 30.0 and soundcloud_cdn)
+
+
+def load_track(
+    url: str,
+    ytdlp_cmd: list[str],
+    timeout: float = 300,
+    on_error: Callable[[str, str], None] | None = None,
+) -> list[dict]:
+    origin = (classify_track(url) or ("", ""))[0]
+
+    def fail(code: str, detail: str = "") -> list[dict]:
+        if on_error:
+            on_error(code, detail)
+        return []
+
+    try:
+        r = analysis.run_text([*ytdlp_cmd, "-J", "--no-warnings", "--no-playlist", "--", url], timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return fail("ytdlp_timeout", f"{timeout:.0f} s")
+    except (OSError, subprocess.SubprocessError) as exc:
+        return fail("ytdlp_error", str(exc))
+    if not r.stdout.strip():
+        return fail("ytdlp_failed", r.stderr or f"exit code {r.returncode}")
+    try:
+        info = json.loads(r.stdout)
+    except ValueError:
+        return fail("ytdlp_bad_output", r.stdout[-400:])
+    if isinstance(info, dict) and info.get("entries"):
+        info = next((e for e in info["entries"] if e), None)
+    if not isinstance(info, dict) or not info.get("id") or (origin == "soundcloud" and is_snippet(info)):
+        return fail("ytdlp_empty", r.stderr)
+    artist, title = parse_entry(info)
+    official = identify(artist, title, float(info.get("duration") or 0))
+    song = entry_song(info, origin, SINGLES_NAME, 1, official)
+    return [song] if song else fail("ytdlp_empty", r.stderr)
 
 
 def load(

@@ -118,6 +118,8 @@ def split_urls(text: str) -> tuple[list[str], list[str]]:
     for url in (u for u in re.split(r"[\s,]+", text) if u):
         if origins.classify(url):
             valid.setdefault(playlist_id(url), origins.canonical_url(url))
+        elif origins.classify_track(url):
+            valid.setdefault("track:" + origins.classify_track(url)[1], origins.canonical_track_url(url))
         else:
             rejected.append(url)
     return list(valid.values()), rejected
@@ -414,6 +416,15 @@ def create_app(automation: bool = True) -> FastAPI:
         else:
             label, params = "refresh_all", {"count": len(ids)}
         return {"job": engine.submit("sync", label, params, playlist_ids=ids, follow_up=body.follow_up)}
+
+    @app.delete("/api/tracks/{key}")
+    async def remove_single(key: str) -> dict[str, bool]:
+        _, tr = track_or_404(key)
+        require_track_idle(tr)
+        if not lib().remove_single(key):
+            raise HTTPException(400, "not_a_single")
+        bus.emit({"type": "library"})
+        return {"ok": True}
 
     @app.delete("/api/playlists/{pid}")
     async def delete_playlist(pid: str) -> dict[str, bool]:

@@ -74,8 +74,8 @@ const STAT_CARDS = ["ok", "partial", "review", "bad", "missing"];
 const VERDICT_CLASS = { MATCH: "s-ok", UNSURE: "s-review", MISMATCH: "s-bad" };
 const statusOf = (tr) => (STATUS_CLASS[tr.status] ? tr.status : "unchecked");
 const statusLabel = (status) => t(`status.${STATUS_CLASS[status] ? status : "unchecked"}`);
-const ORIGIN_NAMES = { spotify: "Spotify", youtube: "YouTube", soundcloud: "SoundCloud", bandcamp: "Bandcamp" };
-const ORIGIN_ICONS = { spotify: "spotify", youtube: "youtube", soundcloud: "cloud", bandcamp: "music" };
+const ORIGIN_NAMES = { spotify: "Spotify", youtube: "YouTube", soundcloud: "SoundCloud", bandcamp: "Bandcamp", singles: "Singles" };
+const ORIGIN_ICONS = { spotify: "spotify", youtube: "youtube", soundcloud: "cloud", bandcamp: "music", singles: "music" };
 const originOf = (item) => (ORIGIN_NAMES[item?.origin] ? item.origin : "spotify");
 const originIcon = (origin) => icon(ORIGIN_ICONS[origin] || "link", "sm");
 
@@ -83,19 +83,23 @@ function classifyUrl(url) {
   let m = url.match(/^https:\/\/open\.spotify\.com\/(?:intl-[a-z]+\/)?(?:playlist|album)\/([A-Za-z0-9]+)/);
   if (m) return ["spotify", m[1]];
   m = url.match(/^https:\/\/(?:www\.|m\.|music\.)?youtube\.com\/(?:playlist|watch|browse)\?\S*?\blist=([A-Za-z0-9_-]+)/);
-  if (m) return /^(LL|WL|LM|RD)/.test(m[1]) ? null : ["youtube", `yt-${m[1]}`];
+  if (m && !/^(LL|WL|LM|RD)/.test(m[1])) return ["youtube", `yt-${m[1]}`];
   m = url.match(/^https:\/\/(?:www\.|m\.)?soundcloud\.com\/([A-Za-z0-9_-]+)\/sets\/([A-Za-z0-9_-]+)/);
   if (m) return ["soundcloud", `sc-${m[1]}-${m[2]}`];
   m = url.match(/^https:\/\/([a-z0-9-]+)\.bandcamp\.com\/album\/([A-Za-z0-9_-]+)/);
-  return m ? ["bandcamp", `bc-${m[1]}-${m[2]}`] : null;
+  if (m) return ["bandcamp", `bc-${m[1]}-${m[2]}`];
+  m = url.match(/^https:\/\/open\.spotify\.com\/(?:intl-[a-z]+\/)?track\/([A-Za-z0-9]+)/);
+  if (m) return ["spotify", m[1], "track"];
+  m = url.match(/^https:\/\/(?:www\.|m\.|music\.)?youtube\.com\/watch\?(?:\S*?&)?v=([A-Za-z0-9_-]{6,})/) || url.match(/^https:\/\/youtu\.be\/([A-Za-z0-9_-]{6,})/);
+  if (m) return ["youtube", `yt-${m[1]}`, "track"];
+  m = url.match(/^https:\/\/(?:www\.|m\.)?soundcloud\.com\/([A-Za-z0-9_-]+)\/(?!sets(?:[/?#]|$))([A-Za-z0-9_-]+)/);
+  if (m) return ["soundcloud", `sc-${m[1]}-${m[2]}`, "track"];
+  m = url.match(/^https:\/\/([a-z0-9-]+)\.bandcamp\.com\/track\/([A-Za-z0-9_-]+)/);
+  return m ? ["bandcamp", `bc-${m[1]}-${m[2]}`, "track"] : null;
 }
 
 function unsupportedKind(url) {
   if (/^https:\/\/(?:www\.|m\.|music\.)?youtube\.com\/(?:playlist|watch|browse)\?\S*?\blist=(?:LL|WL|LM|RD)/.test(url)) return "mix";
-  if (/^https:\/\/open\.spotify\.com\/(?:intl-[a-z]+\/)?track\//.test(url)) return "track";
-  if (/^https:\/\/(?:www\.|m\.|music\.)?youtube\.com\/watch\?/.test(url) || /^https:\/\/youtu\.be\//.test(url)) return "track";
-  if (/^https:\/\/[a-z0-9-]+\.bandcamp\.com\/track\//.test(url)) return "track";
-  if (/^https:\/\/(?:www\.|m\.)?soundcloud\.com\/[A-Za-z0-9_-]+\/(?!sets\/)[A-Za-z0-9_-]+/.test(url)) return "track";
   return null;
 }
 
@@ -887,7 +891,7 @@ function renderDrawer(keepPlayback) {
         <div class="album">${escapeHtml(tr.album || "")}${tr.year ? ` · ${escapeHtml(tr.year)}` : ""}</div>
         <span id="drawer-state">${drawerPill(tr)}</span></div>
       <button class="icon-btn" type="button" data-action="close-drawer" aria-label="${te("drawer.close")}" title="${te("drawer.close")}">${icon("close")}</button>
-    </div><div class="d-actions" style="margin-top:14px">${actions}</div></section>
+    </div><div class="d-actions" style="margin-top:14px">${actions}${pl.origin === "singles" ? `<button class="btn soft" type="button" data-action="remove-single">${icon("close", "sm")}${te("action.removeSingle")}</button>` : ""}</div></section>
     ${proposalSection}${notes}${listening}${chart}${lengths}${qualitySection}${candidates}${backups}
     ${section("section.links", `<dl class="facts">
       ${fact(`origin.${originOf(tr)}`, external(tr.url, escapeHtml(tr.url)))}
@@ -1056,6 +1060,13 @@ async function onAction(name, el) {
         break;
       case "reveal":
         await api("/api/open", "POST", { track_id: key });
+        break;
+      case "remove-single":
+        if (await confirmDialog(t("confirm.removeSingle.title"), para(te("confirm.removeSingle.text")), t("confirm.removeSingle.ok"), true)) {
+          await api(`/api/tracks/${enc(key)}`, "DELETE");
+          closeDrawer();
+          say(t("toast.removedSingle"));
+        }
         break;
       case "apply-proposal":
         if (await confirmDialog(t("confirm.apply.title"), para(te("confirm.apply.text")) + para(te("changes.undo")), t("confirm.apply.ok"))) {
@@ -1232,7 +1243,7 @@ function openAddDialog() {
 }
 
 function checkAddUrls() {
-  const known = new Set(state.library.playlists.map((p) => p.id));
+  const known = new Set(state.library.playlists.flatMap((p) => (p.origin === "singles" ? [p.id, ...p.tracks.map((tr) => tr.id)] : [p.id])));
   const seen = new Set();
   const rows = [];
   let valid = 0;
@@ -1247,7 +1258,8 @@ function checkAddUrls() {
     }
     const origin = found ? ` · ${ORIGIN_NAMES[found[0]]}` : "";
     const cls = kind === "dup" ? "dim" : kind === "track" || kind === "mix" ? "bad" : kind;
-    rows.push(`<li><span class="${cls}">${te(`add.state.${kind}`)}${escapeHtml(origin)}</span><span title="${escapeHtml(url)}">${escapeHtml(url)}</span></li>`);
+    const stateKey = found && found[2] === "track" && (kind === "ok" || kind === "known") ? (kind === "ok" ? "song" : "songKnown") : kind;
+    rows.push(`<li><span class="${cls}">${te(`add.state.${stateKey}`)}${escapeHtml(origin)}</span><span title="${escapeHtml(url)}">${escapeHtml(url)}</span></li>`);
   }
   $("#add-check").innerHTML = rows.join("");
   $("#add-submit").disabled = valid === 0;
