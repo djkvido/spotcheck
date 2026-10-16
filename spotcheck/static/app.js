@@ -90,6 +90,15 @@ function classifyUrl(url) {
   return m ? ["bandcamp", `bc-${m[1]}-${m[2]}`] : null;
 }
 
+function unsupportedKind(url) {
+  if (/^https:\/\/(?:www\.|m\.|music\.)?youtube\.com\/(?:playlist|watch|browse)\?\S*?\blist=(?:LL|WL|LM|RD)/.test(url)) return "mix";
+  if (/^https:\/\/open\.spotify\.com\/(?:intl-[a-z]+\/)?track\//.test(url)) return "track";
+  if (/^https:\/\/(?:www\.|m\.|music\.)?youtube\.com\/watch\?/.test(url) || /^https:\/\/youtu\.be\//.test(url)) return "track";
+  if (/^https:\/\/[a-z0-9-]+\.bandcamp\.com\/track\//.test(url)) return "track";
+  if (/^https:\/\/(?:www\.|m\.)?soundcloud\.com\/[A-Za-z0-9_-]+\/(?!sets\/)[A-Za-z0-9_-]+/.test(url)) return "track";
+  return null;
+}
+
 const referenceLabel = (tr) => (originOf(tr) === "spotify" ? "Spotify" : tr.official ? t("ref.official") : t("ref.upload"));
 
 const QUALITY_ORDER = ["full", "high", "good", "standard", "low"];
@@ -1229,7 +1238,7 @@ function checkAddUrls() {
   let valid = 0;
   for (const url of $("#add-urls").value.split(/[\s,]+/).filter(Boolean)) {
     const found = classifyUrl(url);
-    let kind = "bad";
+    let kind = found ? "ok" : unsupportedKind(url) || "bad";
     if (found && seen.has(found[1])) kind = "dup";
     else if (found) {
       seen.add(found[1]);
@@ -1237,7 +1246,8 @@ function checkAddUrls() {
       valid += 1;
     }
     const origin = found ? ` · ${ORIGIN_NAMES[found[0]]}` : "";
-    rows.push(`<li><span class="${kind === "dup" ? "dim" : kind}">${te(`add.state.${kind}`)}${escapeHtml(origin)}</span><span title="${escapeHtml(url)}">${escapeHtml(url)}</span></li>`);
+    const cls = kind === "dup" ? "dim" : kind === "track" || kind === "mix" ? "bad" : kind;
+    rows.push(`<li><span class="${cls}">${te(`add.state.${kind}`)}${escapeHtml(origin)}</span><span title="${escapeHtml(url)}">${escapeHtml(url)}</span></li>`);
   }
   $("#add-check").innerHTML = rows.join("");
   $("#add-submit").disabled = valid === 0;
@@ -1567,6 +1577,10 @@ function aboutPageHtml() {
       <dt>${te("about.terms")}</dt><dd><a href="${escapeHtml(state.terms.urls[currentLanguage] || state.terms.urls.en)}" target="_blank" rel="noopener">${te("about.termsLink")}</a></dd>
       <dt>${te("about.source")}</dt><dd><a href="https://github.com/djkvido/spotcheck" target="_blank" rel="noopener">github.com/djkvido/spotcheck</a></dd>
     </dl></div></div>
+    <h3 class="page-title">${te("diag.title")}</h3>
+    <p class="page-intro">${te("diag.text")}</p>
+    <div class="diag-actions"><button class="btn" type="button" data-diagnostics="quick">${te("diag.quick")}</button><button class="btn" type="button" data-diagnostics="network">${te("diag.network")}</button></div>
+    <textarea id="diag-text" class="diag-text" readonly rows="12" spellcheck="false" hidden></textarea>
     <p class="hint">${te("about.disclaimer")}</p>`;
 }
 
@@ -1617,7 +1631,35 @@ $("#settings-search").addEventListener("input", (event) => { state.settings.sear
 $("#settings-page").addEventListener("input", (event) => {
   if (event.target.matches("[data-key],[data-list],[data-choice]")) onSettingsInput(event.target);
 });
+async function runDiagnostics(button) {
+  const box = $("#diag-text");
+  const buttons = Array.from(document.querySelectorAll("[data-diagnostics]"));
+  buttons.forEach((b) => { b.disabled = true; });
+  say(t("diag.running"));
+  try {
+    const result = await api(`/api/diagnostics?network=${button.dataset.diagnostics === "network"}`);
+    box.hidden = false;
+    box.value = result.text;
+    box.focus();
+    box.select();
+    let copied = false;
+    try {
+      await navigator.clipboard.writeText(result.text);
+      copied = true;
+    } catch (error) {
+      copied = false;
+    }
+    say(t(copied ? "diag.copied" : "diag.ready"));
+  } catch (error) {
+    sayError(error);
+  } finally {
+    buttons.forEach((b) => { b.disabled = false; });
+  }
+}
+
 $("#settings-page").addEventListener("click", async (event) => {
+  const diagnostics = event.target.closest("[data-diagnostics]");
+  if (diagnostics) { await runDiagnostics(diagnostics); return; }
   const install = event.target.closest("[data-install]");
   if (!install) return;
   const action = install.dataset.install;

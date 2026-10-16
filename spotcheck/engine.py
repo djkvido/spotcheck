@@ -16,7 +16,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from . import analysis, deps, fileops, origins, sources, tags, terms
+from . import analysis, deps, diagnostics, fileops, origins, sources, tags, terms
 from .config import paths
 from .library import AUDIO_SUFFIXES, Library, base_name, compute_status, folder_name, track_key
 
@@ -29,6 +29,8 @@ YTDLP_FORMATS = {"opus": "bestaudio[acodec=opus]/bestaudio", "m4a": "bestaudio[e
 RENAME_RETRY = 600
 UPSCALE_BITRATE = 192
 UPSCALE_CUTOFF = 16.5
+SPOTDL_LOAD_TIMEOUT = 1800
+LOG_LEVELS = {"info": logging.INFO, "warn": logging.WARNING, "error": logging.ERROR}
 
 
 class Cancelled(Exception):
@@ -56,6 +58,7 @@ class Bus:
     def log(self, level: str, code: str, track: str | None = None, **params: Any) -> None:
         event = {"type": "log", "t": time.time(), "level": level, "code": code, "params": params, "track": track}
         self.logs.append(event)
+        log.log(LOG_LEVELS.get(level, logging.INFO), "%s", diagnostics.format_event(event))
         self.emit(event)
 
 
@@ -981,6 +984,7 @@ class Engine:
             self._check_cancel(job)
             job["current"] = url
             self._emit_job(job)
+            self.bus.log("info", "playlist_loading", url=url)
             name, songs = self.load_playlist(url)
             if not songs:
                 failed += 1
@@ -1027,17 +1031,29 @@ class Engine:
 
     def load_playlist(self, url: str) -> tuple[str, list[dict]]:
         if (origins.classify(url) or ("spotify",))[0] != "spotify":
-            name, songs, unavailable = origins.load(url, self.ytdlp_cmd())
+            name, songs, unavailable = origins.load(
+                url,
+                self.ytdlp_cmd(),
+                on_error=lambda code, detail: self.bus.log("warn", code, url=url, detail=diagnostics.short(detail)),
+            )
             if unavailable:
                 self.bus.log("warn", "tracks_unavailable", name=name or url, count=unavailable)
             return name or "Playlist", songs
         out = paths().tmp / f"sync-{uuid.uuid4().hex[:8]}.spotdl"
         try:
-            analysis.run_text(
+            result = analysis.run_text(
                 [sys.executable, "-m", "spotdl", "save", url, "--save-file", str(out), "--simple-tui"],
-                timeout=300,
+                timeout=SPOTDL_LOAD_TIMEOUT,
                 cwd=str(paths().tmp),
             )
+            if result.returncode != 0 or not out.exists():
+                output = (result.stderr or "") + " " + (result.stdout or "")
+                log.warning("spotDL output for %s: %s", url, diagnostics.sanitize(output.strip()[-3000:]))
+                self.bus.log(
+                    "warn", "spotdl_failed", url=url, exit_code=result.returncode, detail=diagnostics.short(output)
+                )
+        except subprocess.TimeoutExpired:
+            self.bus.log("warn", "spotdl_timeout", url=url, minutes=SPOTDL_LOAD_TIMEOUT // 60)
         except (OSError, subprocess.SubprocessError) as exc:
             self.bus.log("warn", "spotdl_error", error=str(exc))
         songs: list[dict] = []

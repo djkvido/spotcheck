@@ -138,13 +138,15 @@ A file converted from a low-quality source therefore shows a cut well below what
 | A player cannot open Opus files | Choose MP3 (320 kbps) or M4A in Settings › Files and quality. Files you already have stay as they are. |
 | Some tracks of a YouTube or SoundCloud playlist are missing | Private, deleted and preview-only tracks are skipped; the log lists how many. |
 | Tracks are never verified | Your FFmpeg build lacks chromaprint (see above). |
+| The link is marked as not supported | Only playlist and album links work: Spotify playlists and albums, YouTube and YouTube Music playlists, SoundCloud sets and Bandcamp albums. A single song, a YouTube Mix, Liked videos and Watch later cannot be added; open the playlist or album the song belongs to and paste that link. |
+| Nothing is loaded after adding a link | Open **Settings › About › Diagnostics** and create a report. It shows which component is missing and whether Spotify, YouTube and Deezer can be reached. The Log card and the file `spotcheck.log` (in the `logs` folder of the application data) show the reason of every failed load. |
 | Tracks with annotated titles are not found | Adjust the search templates in Settings. `{title}` is the title without annotations such as a version, tempo or dance style. |
 | iTunes previews are slow | Apple rate-limits its search API. Keep only Deezer enabled in Settings. |
 | The page looks outdated after an update | Reload it with Ctrl+F5. |
 
 ## Privacy
 
-SpotCheck has no account, no analytics and no telemetry. Everything stays on your computer. It only contacts the services it needs for your playlists: Spotify, YouTube, YouTube Music, SoundCloud or Bandcamp for track lists and audio, Deezer and the iTunes Search API for official previews and metadata, the lyrics sites spotDL uses (Genius, AZLyrics, Musixmatch), and PyPI when the Dependencies page checks for updates. Updates and installations of components start only after you confirm them; see section 4 of the [Terms of Use](TERMS.md#4-connections-and-downloads).
+SpotCheck has no account, no analytics and no telemetry. Everything stays on your computer. The diagnostics report is only created and shown when you ask for it; home folder and user name are replaced in it, and nothing is sent anywhere. It only contacts the services it needs for your playlists: Spotify, YouTube, YouTube Music, SoundCloud or Bandcamp for track lists and audio, Deezer and the iTunes Search API for official previews and metadata, the lyrics sites spotDL uses (Genius, AZLyrics, Musixmatch), and PyPI when the Dependencies page checks for updates. Updates and installations of components start only after you confirm them; see section 4 of the [Terms of Use](TERMS.md#4-connections-and-downloads).
 
 ## Legal notice
 

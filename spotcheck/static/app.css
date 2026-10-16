@@ -475,9 +475,9 @@ dialog::backdrop { background: var(--scrim); }
 .links-list a:hover { color: var(--accent-text); text-decoration: none; background: var(--wash); }
 .links-list a span { color: var(--text-dim); font-size: 13px; }
 .url-list { margin: 10px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 2px; max-height: 180px; overflow-y: auto; }
-.url-list li { display: grid; grid-template-columns: minmax(130px, max-content) minmax(0, 1fr); gap: 10px; font: 12px var(--mono); padding: 3px 0; }
+.url-list li { display: grid; grid-template-columns: minmax(130px, 58%) minmax(0, 1fr); gap: 10px; font: 12px var(--mono); padding: 3px 0; }
 .url-list li span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-dim); }
-.url-list li span:first-child { white-space: nowrap; }
+.url-list li span:first-child { white-space: normal; }
 .url-list .ok { color: var(--good); }
 .url-list .known { color: var(--info); }
 .url-list .bad { color: var(--bad); }
@@ -576,3 +576,5 @@ dialog::backdrop { background: var(--scrim); }
   .dep { grid-template-columns: minmax(0, 1fr) auto; }
   .dep .ver { display: none; }
 }
+.diag-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 10px; }
+.diag-text { width: 100%; min-height: 220px; resize: vertical; font: 12px/1.5 var(--mono); color: var(--text); background: var(--wash); border: 1px solid var(--line-strong); border-radius: 8px; padding: 10px 12px; box-sizing: border-box; white-space: pre; overflow: auto; }

@@ -11,6 +11,7 @@ SPOTDL_REQUIREMENT = "spotdl==4.5.2"
 
 _packaged = False
 _packages: Path | None = None
+_log_file: Path | None = None
 
 
 def packaged() -> bool:
@@ -68,9 +69,25 @@ def prepare(packaged_mode: bool, home: Path | None = None) -> None:
     _prepend_env("PYTHONPATH", paths)
 
 
+def log_path() -> Path | None:
+    return _log_file
+
+
+def log_tail(lines: int = 60) -> list[str]:
+    if _log_file is None or not _log_file.exists():
+        return []
+    try:
+        with _log_file.open("r", encoding="utf-8", errors="replace") as handle:
+            return handle.read().splitlines()[-lines:]
+    except OSError:
+        return []
+
+
 def log_to_file(home: Path) -> None:
+    global _log_file
     logs = home / "logs"
     logs.mkdir(parents=True, exist_ok=True)
-    handler = RotatingFileHandler(logs / "spotcheck.log", maxBytes=1_000_000, backupCount=3, encoding="utf-8")
+    _log_file = logs / "spotcheck.log"
+    handler = RotatingFileHandler(_log_file, maxBytes=1_000_000, backupCount=3, encoding="utf-8")
     handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
     logging.basicConfig(level=logging.INFO, handlers=[handler], force=True)

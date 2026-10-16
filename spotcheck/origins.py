@@ -5,6 +5,7 @@ import re
 import subprocess
 import time
 import urllib.parse
+from collections.abc import Callable
 from typing import Any
 
 from rapidfuzz import fuzz
@@ -168,18 +169,36 @@ def is_snippet(entry: dict) -> bool:
     return "/preview/" in url.path or ((entry.get("duration") or 0) == 30.0 and soundcloud_cdn)
 
 
-def load(url: str, ytdlp_cmd: list[str], timeout: float = 600) -> tuple[str | None, list[dict], int]:
+def load(
+    url: str,
+    ytdlp_cmd: list[str],
+    timeout: float = 600,
+    on_error: Callable[[str, str], None] | None = None,
+) -> tuple[str | None, list[dict], int]:
     origin = (classify(url) or ("", ""))[0]
     cmd = [*ytdlp_cmd, "-J", "--no-warnings", "--ignore-errors"]
     if origin == "youtube":
         cmd.append("--flat-playlist")
+
+    def fail(code: str, detail: str = "") -> tuple[None, list, int]:
+        if on_error:
+            on_error(code, detail)
+        return None, [], 0
+
     try:
         r = analysis.run_text([*cmd, "--", url], timeout=timeout)
-        info = json.loads(r.stdout) if r.stdout.strip() else None
-    except (OSError, subprocess.SubprocessError, ValueError):
-        return None, [], 0
+    except subprocess.TimeoutExpired:
+        return fail("ytdlp_timeout", f"{timeout:.0f} s")
+    except (OSError, subprocess.SubprocessError) as exc:
+        return fail("ytdlp_error", str(exc))
+    if not r.stdout.strip():
+        return fail("ytdlp_failed", r.stderr or f"exit code {r.returncode}")
+    try:
+        info = json.loads(r.stdout)
+    except ValueError:
+        return fail("ytdlp_bad_output", r.stdout[-400:])
     if not isinstance(info, dict) or not info.get("entries"):
-        return None, [], 0
+        return fail("ytdlp_empty", r.stderr)
     name = re.sub(r"^Album - ", "", info.get("title") or "") or "Playlist"
     songs, unavailable = [], 0
     for position, entry in enumerate(info["entries"], 1):

@@ -80,6 +80,12 @@ jobs:
           Start-Process $setup.FullName -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/DIR=$dir" -Wait
           & "$dir/runtime/python.exe" -I -m spotcheck --packaged --home (Join-Path $env:RUNNER_TEMP "home") --setup
           if ($LASTEXITCODE -ne 0) { exit 1 }
+          & "$dir/runtime/python.exe" -I -m spotcheck --packaged --home (Join-Path $env:RUNNER_TEMP "home") --diagnostics --network
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          $env:PYTHONUTF8 = "1"
+          & "$dir/runtime/python.exe" -I -m spotcheck --packaged --home (Join-Path $env:RUNNER_TEMP "home") --check-playlist "https://open.spotify.com/album/4aawyAB9vmqN3uQ7FjRGTy"
+          Write-Host "Playlist load exit code: $LASTEXITCODE (informational)"
+          $global:LASTEXITCODE = 0
           & "$dir/tools/ffmpeg.exe" -hide_banner -muxers | Select-String chromaprint
           if ($LASTEXITCODE -ne 0) { exit 1 }
           Start-Process "$dir/unins000.exe" -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES" -Wait
@@ -114,6 +120,8 @@ jobs:
           app=/Volumes/SpotCheck/SpotCheck.app
           codesign --verify --deep --strict "$app"
           "$app/Contents/Resources/runtime/bin/python3" -I -m spotcheck --packaged --home "$RUNNER_TEMP/home" --setup
+          "$app/Contents/Resources/runtime/bin/python3" -I -m spotcheck --packaged --home "$RUNNER_TEMP/home" --diagnostics --network
+          "$app/Contents/Resources/runtime/bin/python3" -I -m spotcheck --packaged --home "$RUNNER_TEMP/home" --check-playlist "https://open.spotify.com/album/4aawyAB9vmqN3uQ7FjRGTy" || echo "Playlist load exit code: $? (informational)"
           hdiutil detach /Volumes/SpotCheck
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:

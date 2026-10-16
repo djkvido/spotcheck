@@ -15,7 +15,7 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import __version__, analysis, deps, fileops, origins, projects, sources, terms
+from . import __version__, analysis, deps, diagnostics, fileops, origins, projects, sources, terms
 from . import settings as settings_mod
 from .config import STATIC_DIR, paths
 from .engine import Bus, Engine
@@ -385,6 +385,11 @@ def create_app(automation: bool = True) -> FastAPI:
     @app.get("/api/deps")
     async def get_deps() -> dict[str, Any]:
         return await asyncio.to_thread(deps.status)
+
+    @app.get("/api/diagnostics")
+    async def get_diagnostics(network: bool = False) -> dict[str, str]:
+        events = [diagnostics.format_event(event, stamp=True) for event in list(bus.logs)[-40:]]
+        return {"text": await asyncio.to_thread(diagnostics.report, network, events)}
 
     @app.post("/api/deps/install")
     async def install(body: InstallRequest) -> dict[str, str]:

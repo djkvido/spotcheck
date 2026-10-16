@@ -11,7 +11,7 @@ import urllib.request
 import webbrowser
 from pathlib import Path
 
-from . import __version__, runtime
+from . import __version__, deps, diagnostics, runtime
 from .config import configure
 
 SETUP_MESSAGES = {
@@ -115,6 +115,18 @@ def free_port(host: str, preferred: int, attempts: int = 20) -> int | None:
     return None
 
 
+def check_playlist(url: str) -> int:
+    from .engine import Bus, Engine
+    from .library import Library
+
+    bus = Bus()
+    name, songs = Engine(Library(), bus).load_playlist(url)
+    for event in bus.logs:
+        print(diagnostics.format_event(event))
+    print(f"{name}: {len(songs)} tracks")
+    return 0 if songs else 1
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="spotcheck",
@@ -126,6 +138,11 @@ def main() -> None:
     parser.add_argument("--no-browser", action="store_true", help="do not open the browser")
     parser.add_argument("--setup", action="store_true", help="check and install missing dependencies, then exit")
     parser.add_argument("--quit", action="store_true", help="stop a running SpotCheck, then exit")
+    parser.add_argument("--diagnostics", action="store_true", help="print a report about the installation, then exit")
+    parser.add_argument(
+        "--network", action="store_true", help="with --diagnostics, also test the connection to the services"
+    )
+    parser.add_argument("--check-playlist", metavar="URL", help="load one playlist, print what happened, then exit")
     parser.add_argument("--packaged", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--version", action="version", version=f"spotcheck {__version__}")
     args = parser.parse_args()
@@ -142,6 +159,11 @@ def main() -> None:
         runtime.prepare(False)
         logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
         configure(args.home)
+    if args.diagnostics:
+        print(diagnostics.report(network=args.network))
+        raise SystemExit(0 if deps.status(check_updates=False)["ready"] else 1)
+    if args.check_playlist:
+        raise SystemExit(check_playlist(args.check_playlist))
     if args.setup:
         raise SystemExit(run_setup())
 
@@ -165,6 +187,7 @@ def main() -> None:
         app, host=args.host, port=port, log_level="warning", log_config=None, timeout_graceful_shutdown=2
     )
     server = uvicorn.Server(config)
+    logging.getLogger("spotcheck").info("Start of SpotCheck %s: %s", __version__, diagnostics.report())
     app.state.shutdown = lambda: setattr(server, "should_exit", True)
     if not args.no_browser:
         threading.Timer(1.2, webbrowser.open, args=(url,)).start()
