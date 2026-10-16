@@ -4,9 +4,11 @@
 [![License: GPL v3](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/djkvido/spotcheck)](https://github.com/djkvido/spotcheck/releases/latest)
 
-SpotCheck is a small open-source project that keeps a local music library in order. You give it playlists from Spotify, YouTube, YouTube Music, SoundCloud or Bandcamp; it finds their tracks on publicly available sources, keeps them in one folder per playlist and checks that every file really is the song it claims to be and sounds as good as it should. Each file is compared with the official 30-second preview by audio fingerprint, and its length, silence, integrity and real sound quality are measured. It runs on your computer and you control it from your browser.
+**Is every file in your music library really the song it should be?** SpotCheck checks it for you. Each track is compared with the official preview by audio fingerprint, and its length, silence and real sound quality are measured, so you only listen to the few tracks that need it.
 
-**[Download for Windows and macOS](https://github.com/djkvido/spotcheck/releases/latest)** · [Run from source](#running-from-source) · [How it works](#how-verification-works)
+Open source, runs on your computer, for Windows and macOS.
+
+**[Download for Windows and macOS](https://github.com/djkvido/spotcheck/releases/latest)** · [How it works](#how-it-works) · [Run from source](#running-from-source)
 
 ![Library view: every track with its status, length, silence and how well it matches the official preview](docs/screenshot-library.png)
 
@@ -16,31 +18,54 @@ https://github.com/user-attachments/assets/c3a837d0-3a1c-400e-b947-7363cf7d1730
 
 > SpotCheck started as a hobby project and is shared as it is, for people who like their music files tidy. Please use it responsibly: for your own listening and only for music you are allowed to keep, never to share or sell anything. It does not download from Spotify, does not bypass any copy protection and does not host any music. Using it means agreeing to the [Terms of Use](TERMS.md) ([česky](TERMS.cs.md)).
 
-## Why SpotCheck
+## What it catches
 
-Tools that build a local copy of a playlist, such as [spotDL](https://github.com/spotDL/spotify-downloader), do not take audio from the streaming service itself. They search public sources for each track and pick the closest result. Usually that is the right recording, but automatic matching has known weak points:
+Tools that build a local copy of a playlist, such as [spotDL](https://github.com/spotDL/spotify-downloader), do not take audio from the streaming service itself. They search public sources for each track and pick the closest result. Usually that is the right recording, but not always. SpotCheck finds the cases where it was not:
 
-- a different recording under the same name: a live version, a cover, a remix, another master or a long mix;
-- titles with annotations such as a version, tempo or dance style, which searches often do not find;
-- silence or an intro at the start or end, which makes the file longer than the original;
-- uploads of low sound quality, or files whose bitrate was inflated from a worse source.
+| What went wrong | How SpotCheck notices |
+|---|---|
+| A live version, cover, remix or another master instead of the song | The official preview is searched inside your file by its [Chromaprint](https://acoustid.org/chromaprint) fingerprint. A partial match is marked *Needs review*, no match *Wrong*. |
+| A long intro, outro or silence | The length is compared with the official length, and silence at the start and end is measured. |
+| A 320 kbps file made from a worse source | The spectrum is measured: where the encoder cut off the high frequencies shows the real quality, whatever the header says. |
+| A damaged or truncated file | The audio is decoded and checked. |
+| A track that could not be found | It is listed as *Missing*, and the search templates can be tuned in Settings. |
 
-Checking a whole library by ear takes hours. SpotCheck checks every file against the official preview and metadata automatically and leaves you only the tracks that really need a listen.
+Checking a whole library by ear takes hours. SpotCheck leaves you only the tracks that really need a listen.
+
+## How it works
+
+1. **Paste links** to playlists, albums or single songs from Spotify, YouTube, YouTube Music, SoundCloud or Bandcamp.
+2. **SpotCheck loads, downloads and checks** every track and sorts it into *Verified*, *No preview*, *Needs review*, *Wrong* or *Missing*.
+3. **You decide what needs attention.** For a bad track SpotCheck looks for a better source, verifies it by fingerprint and offers it. You listen to it next to your current file and choose; every replacement keeps a backup that you can restore with one click.
 
 ## Features
+
+**Load**
 
 - **Playlists from several services:** Spotify playlists and albums (through spotDL), YouTube and YouTube Music playlists, SoundCloud sets and Bandcamp albums (through yt-dlp). Tracks of the latter are matched with the official release on Deezer, so their length and preview are verified like Spotify tracks.
 - **Single songs** from Spotify, YouTube, SoundCloud and Bandcamp: paste the link of one song and it is collected in the **Singles** list, in its own folder, and checked like every other track.
 - **Downloads** into one folder per playlist, with tags and cover art. Choose **Opus** or **M4A** to keep YouTube's own stream without re-encoding, or **MP3** at a bitrate of your choice.
-- **Real sound quality:** SpotCheck measures where each file's spectrum ends, which is where the encoder cut off the high frequencies, and flags low-quality sources and files whose bitrate was inflated from a worse source. Among candidates of the same recording, the better sounding one wins.
+
+**Verify and measure**
+
 - **Verification against the official preview** from Deezer, with iTunes as a fallback. The preview is located inside your file by its [Chromaprint](https://acoustid.org/chromaprint) fingerprint, so you know whether it really is the same recording.
 - **File checks:** length compared with the official length (which gives away intros and outros), silence at the start and end, damaged or truncated audio and low bitrate.
+- **Real sound quality:** SpotCheck measures where each file's spectrum ends, which is where the encoder cut off the high frequencies, and flags low-quality sources and files whose bitrate was inflated from a worse source. Among candidates of the same recording, the better sounding one wins.
+
+**Fix safely**
+
 - **Better sources** from YouTube Music, YouTube and SoundCloud. Every candidate is verified by fingerprint before it is offered to you.
 - **Nothing is overwritten without your consent.** A better source is only proposed; you listen to it next to your current file and decide. Every replacement and trim keeps a backup that you can restore with one click.
 - **Lossless silence trimming** without re-encoding; tags and cover art are kept in MP3, M4A and Opus.
+
+**Keep it tidy and automatic**
+
 - **Tidy music folder:** optional numbering of file names in playlist order (`001 - Artist - Title`), an M3U playlist in every playlist folder, missing tags and covers filled in, and a track that is verified in one playlist is copied into another instead of being downloaded again.
 - **Export** of playlists with their tracks and M3U files into another folder, for example onto a USB stick, optionally numbered.
 - **Runs by itself.** New or changed files in the music folder are checked automatically, playlists are updated from their sources on a schedule and new tracks arrive downloaded and verified. Automatic jobs never replace or trim files you already have.
+
+**Use it your way**
+
 - **Projects:** separate libraries with their own music folder, playlists, settings and history. A project can be saved to a small file and opened elsewhere.
 - **Playlist overview and filters:** cover previews and health per playlist, filters by status and by finding (silence, intro, different length…), search across titles, artists, albums and files.
 - **Every action explains itself:** buttons show how many tracks they would touch, ask before changing files and report what happened. Settings are validated as you type.
