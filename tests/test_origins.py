@@ -26,11 +26,9 @@ def test_supported_links(url, expected):
         "https://www.youtube.com/playlist?list=LL",
         "https://www.youtube.com/watch?v=x&list=RDfOoFshzL0k0",
         "https://soundcloud.com/the-band/a-track",
-        "http://open.spotify.com/playlist/abc",
-        "spotify:playlist:abc",
     ],
 )
-def test_unsupported_links(url):
+def test_links_that_are_not_playlists_are_not_taken_for_playlists(url):
     assert origins.classify(url) is None
 
 
@@ -110,3 +108,45 @@ def test_entries_become_songs_with_official_metadata():
 def test_soundcloud_previews_are_recognised():
     assert origins.is_snippet({"url": "https://cf-preview-media.sndcdn.com/preview/0/30/x.mp3", "duration": 30.0})
     assert not origins.is_snippet({"url": "https://playback.media-streaming.soundcloud.cloud/x", "duration": 205.0})
+
+
+@pytest.mark.parametrize(
+    ("pasted", "expected"),
+    [
+        ("open.spotify.com/track/4yOn1TEcfsKHUJCL2h1r8I", "https://open.spotify.com/track/4yOn1TEcfsKHUJCL2h1r8I"),
+        (
+            "http://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M",
+            "https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M",
+        ),
+        ("spotify:track:4yOn1TEcfsKHUJCL2h1r8I", "https://open.spotify.com/track/4yOn1TEcfsKHUJCL2h1r8I"),
+        ("spotify:playlist:37i9dQZF1DXcBWIGoYBM5M", "https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M"),
+        ("<https://youtu.be/Y79K-XyMOA0>", "https://youtu.be/Y79K-XyMOA0"),
+        ("www.youtube.com/watch?v=Y79K-XyMOA0", "https://www.youtube.com/watch?v=Y79K-XyMOA0"),
+        ("https://www.youtube.com/shorts/Y79K-XyMOA0", "https://www.youtube.com/watch?v=Y79K-XyMOA0"),
+        ("artist.bandcamp.com/album/first-light", "https://artist.bandcamp.com/album/first-light"),
+    ],
+)
+def test_pasted_links_are_completed_before_they_are_recognised(pasted, expected):
+    assert origins.normalize(pasted) == expected
+    assert origins.classify(pasted) or origins.classify_track(pasted)
+
+
+def test_a_link_without_the_scheme_is_accepted_and_stored_in_its_full_form():
+    from spotcheck.server import split_urls
+
+    urls, rejected = split_urls("open.spotify.com/track/abc123 spotify:album:xyz789 example.com/page")
+    assert urls == ["https://open.spotify.com/track/abc123", "https://open.spotify.com/album/xyz789"]
+    assert rejected == ["example.com/page"]
+
+
+@pytest.mark.parametrize(
+    ("title", "clean"),
+    [
+        ("PIZZA DANCE (Oficiálny videoklip)", "PIZZA DANCE"),
+        ("Song name [Oficiální video]", "Song name"),
+        ("Song name (Official Video)", "Song name"),
+        ("Song name (Live at Wembley)", "Song name (Live at Wembley)"),
+    ],
+)
+def test_czech_and_slovak_video_suffixes_are_removed_from_titles(title, clean):
+    assert origins.split_title(title, "Channel")[1] == clean

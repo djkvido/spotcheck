@@ -79,7 +79,17 @@ const ORIGIN_ICONS = { spotify: "spotify", youtube: "youtube", soundcloud: "clou
 const originOf = (item) => (ORIGIN_NAMES[item?.origin] ? item.origin : "spotify");
 const originIcon = (origin) => icon(ORIGIN_ICONS[origin] || "link", "sm");
 
-function classifyUrl(url) {
+function normalizeUrl(raw) {
+  let url = raw.trim().replace(/^[<"']+|[>"']+$/g, "");
+  const uri = url.match(/^spotify:(track|album|playlist):([A-Za-z0-9]+)$/);
+  if (uri) return `https://open.spotify.com/${uri[1]}/${uri[2]}`;
+  if (/^http:\/\//i.test(url)) url = `https://${url.slice(7)}`;
+  else if (/^(?:open\.spotify\.com|(?:www\.|m\.|music\.)?youtube\.com|youtu\.be|(?:www\.|m\.)?soundcloud\.com|[a-z0-9-]+\.bandcamp\.com)\//i.test(url)) url = `https://${url}`;
+  return url.replace(/^(https:\/\/(?:www\.|m\.)?youtube\.com)\/shorts\/([A-Za-z0-9_-]{6,})/, "$1/watch?v=$2");
+}
+
+function classifyUrl(rawUrl) {
+  const url = normalizeUrl(rawUrl);
   let m = url.match(/^https:\/\/open\.spotify\.com\/(?:intl-[a-z]+\/)?(?:playlist|album)\/([A-Za-z0-9]+)/);
   if (m) return ["spotify", m[1]];
   m = url.match(/^https:\/\/(?:www\.|m\.|music\.)?youtube\.com\/(?:playlist|watch|browse)\?\S*?\blist=([A-Za-z0-9_-]+)/);
@@ -98,7 +108,8 @@ function classifyUrl(url) {
   return m ? ["bandcamp", `bc-${m[1]}-${m[2]}`, "track"] : null;
 }
 
-function unsupportedKind(url) {
+function unsupportedKind(rawUrl) {
+  const url = normalizeUrl(rawUrl);
   if (/^https:\/\/(?:www\.|m\.|music\.)?youtube\.com\/(?:playlist|watch|browse)\?\S*?\blist=(?:LL|WL|LM|RD)/.test(url)) return "mix";
   return null;
 }

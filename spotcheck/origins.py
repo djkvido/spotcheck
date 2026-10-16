@@ -27,11 +27,19 @@ SOUNDCLOUD_TRACK = re.compile(
 )
 BANDCAMP_TRACK = re.compile(r"^https://([a-z0-9-]+)\.bandcamp\.com/track/([A-Za-z0-9_-]+)")
 SINGLES_NAME = "Singles"
+SPOTIFY_URI = re.compile(r"^spotify:(track|album|playlist):([A-Za-z0-9]+)$")
+BARE_HOST = re.compile(
+    r"^(?:open\.spotify\.com|(?:www\.|m\.|music\.)?youtube\.com|youtu\.be|(?:www\.|m\.)?soundcloud\.com"
+    r"|[a-z0-9-]+\.bandcamp\.com)/"
+)
+YOUTUBE_SHORTS = re.compile(r"^(https://(?:www\.|m\.)?youtube\.com)/shorts/([A-Za-z0-9_-]{6,})")
 
 TOPIC = re.compile(r"\s*-\s*topic$", re.I)
 CHANNEL_NOISE = re.compile(r"\s*(?:vevo|official(?:\s+channel)?|music)$", re.I)
 TITLE_NOISE = re.compile(
-    r"\s*[(\[](?:[^)\]]*\b(?:official|lyrics?|audio|video|visuali[sz]er|hd|hq|4k|mv|clip)\b[^)\]]*)[)\]]", re.I
+    r"\s*[(\[](?:[^)\]]*\b(?:official|lyrics?|audio|video|visuali[sz]er|hd|hq|4k|mv|clip"
+    r"|ofici[aá]ln[ýyíi]e?|oficialni|videoklip|klip|zvuk|text)\b[^)\]]*)[)\]]",
+    re.I,
 )
 MATCH_TITLE = 75
 MATCH_ARTIST = 60
@@ -39,8 +47,20 @@ MATCH_LENGTH = 45.0
 IDENTIFY_DELAY = 0.12
 
 
+def normalize(url: str) -> str:
+    url = url.strip().strip("<>\"'")
+    uri = SPOTIFY_URI.match(url)
+    if uri:
+        return f"https://open.spotify.com/{uri.group(1)}/{uri.group(2)}"
+    if url.lower().startswith("http://"):
+        url = "https://" + url[7:]
+    elif BARE_HOST.match(url.lower()):
+        url = "https://" + url
+    return YOUTUBE_SHORTS.sub(r"\1/watch?v=\2", url)
+
+
 def classify(url: str) -> tuple[str, str] | None:
-    url = url.strip()
+    url = normalize(url)
     m = SPOTIFY.match(url)
     if m:
         return "spotify", m.group(1)
@@ -59,7 +79,7 @@ def classify(url: str) -> tuple[str, str] | None:
 
 
 def classify_track(url: str) -> tuple[str, str] | None:
-    url = url.strip()
+    url = normalize(url)
     if classify(url):
         return None
     m = SPOTIFY_TRACK.match(url)
@@ -78,7 +98,7 @@ def classify_track(url: str) -> tuple[str, str] | None:
 
 
 def canonical_track_url(url: str) -> str:
-    url = url.strip()
+    url = normalize(url)
     found = classify_track(url)
     if not found:
         return url
@@ -93,6 +113,7 @@ def canonical_track_url(url: str) -> str:
 
 
 def canonical_url(url: str) -> str:
+    url = normalize(url)
     found = classify(url)
     if found and found[0] == "youtube":
         list_id = found[1][3:]

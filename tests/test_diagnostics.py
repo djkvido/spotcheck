@@ -94,7 +94,7 @@ def completed(returncode=1, stdout="", stderr=""):
 
 def test_a_failing_spotdl_is_reported_with_its_output(engine, monkeypatch):
     monkeypatch.setattr(
-        "spotcheck.engine.analysis.run_text", lambda *a, **k: completed(1, "", "HTTP 429 too many requests")
+        "spotcheck.engine.analysis.run_streaming", lambda cmd, on_line, **k: completed(1, "HTTP 429 too many requests")
     )
     songs = engine.load_playlist("https://open.spotify.com/playlist/Z")[1]
     assert songs == []
@@ -107,7 +107,7 @@ def test_a_spotdl_timeout_is_reported(engine, monkeypatch):
     def hang(*args, **kwargs):
         raise subprocess.TimeoutExpired("spotdl", 1)
 
-    monkeypatch.setattr("spotcheck.engine.analysis.run_text", hang)
+    monkeypatch.setattr("spotcheck.engine.analysis.run_streaming", hang)
     assert engine.load_playlist("https://open.spotify.com/playlist/Z")[1] == []
     assert any(e["code"] == "spotdl_timeout" for e in engine.bus.logs)
 
@@ -143,3 +143,29 @@ def test_the_diagnostics_endpoint_returns_the_report(workspace, monkeypatch):
     with TestClient(create_app(automation=False), base_url="http://127.0.0.1") as client:
         text = client.get("/api/diagnostics").json()["text"]
     assert text.startswith("SpotCheck ") and "Ready: yes" in text
+
+
+def test_the_size_of_a_spotify_playlist_is_announced_while_it_is_still_loading(engine, monkeypatch):
+    def fake(cmd, on_line, **kwargs):
+        on_line("Processing query: https://open.spotify.com/playlist/Z" + chr(10))
+        on_line("Found 49 songs in Today's Top Hits (Playlist)" + chr(10))
+        on_line("Found 49 songs in Today's Top Hits (Playlist)" + chr(10))
+        return completed(1, "")
+
+    monkeypatch.setattr("spotcheck.engine.analysis.run_streaming", fake)
+    engine.load_playlist("https://open.spotify.com/playlist/Z")
+    found = [e for e in engine.bus.logs if e["code"] == "playlist_found"]
+    assert len(found) == 1
+    assert found[0]["params"] == {"name": "Today's Top Hits", "count": 49}
+
+
+def test_streaming_passes_every_line_and_stops_a_hanging_process():
+    import sys
+
+    from spotcheck import analysis
+
+    seen = []
+    result = analysis.run_streaming([sys.executable, "-c", "print('one'); print('two')"], seen.append, timeout=30)
+    assert result.returncode == 0 and [line.strip() for line in seen] == ["one", "two"]
+    with pytest.raises(subprocess.TimeoutExpired):
+        analysis.run_streaming([sys.executable, "-c", "import time; time.sleep(60)"], seen.append, timeout=1)

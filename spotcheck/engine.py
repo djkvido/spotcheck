@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import queue
+import re
 import shutil
 import subprocess
 import sys
@@ -30,6 +31,7 @@ RENAME_RETRY = 600
 UPSCALE_BITRATE = 192
 UPSCALE_CUTOFF = 16.5
 SPOTDL_LOAD_TIMEOUT = 1800
+SPOTDL_FOUND = re.compile(r"Found (\d+) songs? in (.+?)(?: \((?:Playlist|Album|Song)\))?\s*$")
 LOG_LEVELS = {"info": logging.INFO, "warn": logging.WARNING, "error": logging.ERROR}
 
 
@@ -1067,9 +1069,18 @@ class Engine:
                 self.bus.log("warn", "tracks_unavailable", name=name or url, count=unavailable)
             return name or "Playlist", songs
         out = paths().tmp / f"sync-{uuid.uuid4().hex[:8]}.spotdl"
+        announced: list[bool] = []
+
+        def progress(line: str) -> None:
+            found = SPOTDL_FOUND.search(line)
+            if found and not announced:
+                announced.append(True)
+                self.bus.log("info", "playlist_found", name=found.group(2).strip(), count=int(found.group(1)))
+
         try:
-            result = analysis.run_text(
+            result = analysis.run_streaming(
                 [sys.executable, "-m", "spotdl", "save", url, "--save-file", str(out), "--simple-tui"],
+                progress,
                 timeout=SPOTDL_LOAD_TIMEOUT,
                 cwd=str(paths().tmp),
             )

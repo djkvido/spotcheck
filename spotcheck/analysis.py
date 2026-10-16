@@ -6,6 +6,8 @@ import re
 import shutil
 import struct
 import subprocess
+import threading
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -63,6 +65,43 @@ def ffmpeg_info(refresh: bool = False) -> dict[str, Any]:
                 pass
         _cache["info"] = info
     return _cache["info"]
+
+
+def run_streaming(
+    cmd: list[str], on_line: Callable[[str], None], timeout: float | None = None, cwd: str | None = None
+) -> subprocess.CompletedProcess:
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        creationflags=CREATE_NO_WINDOW,
+        cwd=cwd,
+        env={**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"},
+    )
+    expired = threading.Event()
+
+    def stop() -> None:
+        expired.set()
+        proc.kill()
+
+    timer = threading.Timer(timeout, stop) if timeout else None
+    if timer:
+        timer.start()
+    lines: list[str] = []
+    try:
+        for line in proc.stdout:
+            lines.append(line)
+            on_line(line)
+        proc.wait()
+    finally:
+        if timer:
+            timer.cancel()
+    if expired.is_set():
+        raise subprocess.TimeoutExpired(cmd, timeout or 0)
+    return subprocess.CompletedProcess(cmd, proc.returncode, "".join(lines), "")
 
 
 def run_text(cmd: list[str], timeout: float | None = None, cwd: str | None = None) -> subprocess.CompletedProcess:
