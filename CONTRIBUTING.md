@@ -69,7 +69,7 @@ The tests do not need network access. `tests/test_audio_ffmpeg.py` and `tests/te
 ## Releases
 
 1. Update `__version__` in `spotcheck/__init__.py`, commit and push.
-2. Tag the commit with the same version, for example `git tag v1.0.0`, and push the tag.
+2. Tag the commit with the same version, for example `git tag v1.0.2`, and push the tag.
 3. The [Release workflow](.github/workflows/release.yml) builds FFmpeg from source, the Windows installer and the macOS app, installs and checks both, and creates a draft release with the installers, the source code, `SHA256SUMS.txt` and build provenance attestations.
 4. Review the draft on GitHub and publish it.
 

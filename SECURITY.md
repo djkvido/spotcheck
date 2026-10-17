@@ -26,5 +26,5 @@ Include what you found, how to reproduce it and which version and operating syst
 - Every release lists the SHA-256 hash of each file in `SHA256SUMS.txt` and carries a signed build provenance attestation. To verify a download with the [GitHub CLI](https://cli.github.com):
 
   ```bash
-  gh attestation verify SpotCheck-1.0.0-windows-x64-setup.exe --repo djkvido/spotcheck
+  gh attestation verify SpotCheck-1.0.2-windows-x64-setup.exe --repo djkvido/spotcheck
   ```
