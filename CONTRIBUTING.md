@@ -68,10 +68,9 @@ The tests do not need network access. `tests/test_audio_ffmpeg.py` and `tests/te
 
 ## Releases
 
-1. Update `__version__` in `spotcheck/__init__.py`, commit and push.
-2. Tag the commit with the same version, for example `git tag v1.0.2`, and push the tag.
-3. The [Release workflow](.github/workflows/release.yml) builds FFmpeg from source, the Windows installer and the macOS app, installs and checks both, and creates a draft release with the installers, the source code, `SHA256SUMS.txt` and build provenance attestations.
-4. Review the draft on GitHub and publish it.
+1. Open **Actions › Prepare release › Run workflow** on GitHub and enter the new version, for example `1.0.3`. The workflow checks that it is newer than the current one, updates `__version__` in `spotcheck/__init__.py`, commits, tags `v1.0.3` and starts the build. Without GitHub Actions the same is done by hand: change `__version__`, commit, tag with the same version and push the tag.
+2. The [Release workflow](.github/workflows/release.yml) builds FFmpeg from source, the Windows installer and the macOS app, installs and checks both, and creates a draft release with the installers, the source code, `SHA256SUMS.txt` and build provenance attestations. It refuses a tag that differs from `__version__`.
+3. Review the draft on GitHub, add what is new to its text and publish it in one step.
 
 Dependencies of the installers are locked with hashes in `packaging/requirements-*.lock`. After changing the dependencies in `pyproject.toml`, regenerate the locks with only releases that are at least two weeks old:
 
