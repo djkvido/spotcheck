@@ -4,6 +4,8 @@ Notable changes of each release. The format follows [Keep a Changelog](https://k
 
 ## Unreleased
 
+## 1.1.0 - 2026-10-21
+
 ### Added
 
 - **Loudness and true peak.** Every check measures integrated loudness, loudness range and true peak (EBU R128). The values are shown in the details of a track and in the CSV export; peaks above 1 dBTP and very quiet files are listed as findings without changing the verdict.
