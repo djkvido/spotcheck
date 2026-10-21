@@ -88,7 +88,7 @@ uv pip compile pyproject.toml --generate-hashes --no-header --no-annotate --pyth
   --python-platform x86_64-pc-windows-msvc --only-binary :all: --exclude-newer <date> -o packaging/requirements-windows.lock
 ```
 
-and the same with `--python-platform aarch64-apple-darwin -o packaging/requirements-macos.lock`. Versions and hashes of Python, Deno and the FFmpeg sources live in `packaging/versions.json`.
+and the same with `--python-platform aarch64-apple-darwin -o packaging/requirements-macos.lock`. When the weekly audit reports a vulnerability, update only the affected package with `--upgrade-package <name>` and a current `--exclude-newer` date. Versions and hashes of Python, Deno and the FFmpeg sources live in `packaging/versions.json`.
 
 ## Pull requests
 

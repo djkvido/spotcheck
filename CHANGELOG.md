@@ -31,6 +31,7 @@ Notable changes of each release. The format follows [Keep a Changelog](https://k
 
 - SpotCheck only listens on this computer, and covers and previews are only fetched over HTTPS with a size limit.
 - Links in the interface only open web addresses, and exported CSV cells cannot be interpreted as formulas.
+- The installers include Pillow 13.0.0, which fixes known vulnerabilities. SpotCheck itself does not use Pillow; it is a dependency of a spotDL component.
 
 ## 1.0.2 - 2026-10-17
 
