@@ -9,7 +9,7 @@
   --sep: rgba(255, 255, 255, .086);
   --text: #e8e8ec;
   --text-mid: #9aa0a9;
-  --text-dim: #80848d;
+  --text-dim: #8d919a;
   --disabled: #5a5d65;
   --accent: #ff9328;
   --accent-hover: #ffaf5c;
@@ -578,3 +578,9 @@ dialog::backdrop { background: var(--scrim); }
 }
 .diag-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 10px; }
 .diag-text { width: 100%; min-height: 220px; resize: vertical; font: 12px/1.5 var(--mono); color: var(--text); background: var(--wash); border: 1px solid var(--line-strong); border-radius: 8px; padding: 10px 12px; box-sizing: border-box; white-space: pre; overflow: auto; }
+
+tr.row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+}

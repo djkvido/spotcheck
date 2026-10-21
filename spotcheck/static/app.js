@@ -286,6 +286,18 @@ class ApiError extends Error {
   }
 }
 
+function safeHref(url) {
+  return /^https?:\/\//i.test(String(url || "")) ? url : "#";
+}
+
+function decodeKey(text) {
+  try {
+    return decodeURIComponent(text);
+  } catch {
+    return "";
+  }
+}
+
 async function api(path, method = "GET", body) {
   let response;
   try {
@@ -462,7 +474,7 @@ function renderQuality() {
 }
 
 function renderLog() {
-  const names = new Map(allTracks().map(({ tr }) => [tr.id, `${tr.artist} – ${tr.name}`]));
+  const names = trackNames();
   const el = $("#log");
   const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 30;
   el.innerHTML = state.logs.slice(-150).map((l) => `<div class="log-line ${escapeHtml(l.level)}"><time>${fmtClock(l.t)}</time><span class="msg">${escapeHtml(logText(l, names))}</span></div>`).join("")
@@ -506,7 +518,7 @@ function matchCell(tr) {
 
 function linksCell(tr) {
   const verify = tr.verify || {};
-  const link = (href, title, html) => `<a href="${escapeHtml(href)}" target="_blank" rel="noopener" title="${escapeHtml(title)}">${html}</a>`;
+  const link = (href, title, html) => `<a href="${escapeHtml(safeHref(href))}" target="_blank" rel="noopener" title="${escapeHtml(title)}">${html}</a>`;
   const links = [];
   if (tr.source && tr.source.url) links.push(link(tr.source.url, t("link.source", { name: sourceName(tr.source.url) }), sourceIcon(tr.source.url)));
   links.push(link(tr.url, t("link.origin", { origin: ORIGIN_NAMES[originOf(tr)] }), originIcon(originOf(tr))));
@@ -533,7 +545,7 @@ function rowHtml({ pl, tr, i }) {
     ? `<button class="icon-btn" type="button" data-track-action="fix" ${tr.step ? "disabled" : ""} title="${te(tr.step ? "track.busy" : "row.fix")}" aria-label="${te("row.fix")}" style="${attention ? "color:var(--accent-text)" : ""}">${icon("search", "sm")}</button>`
     : `<button class="icon-btn" type="button" data-track-action="download" ${tr.step ? "disabled" : ""} title="${te(tr.step ? "track.busy" : "row.download")}" aria-label="${te("row.download")}">${icon("download", "sm")}</button>`;
   const cls = ["row", state.openKey === key ? "sel" : "", tr.step ? "busy" : ""].join(" ");
-  return `<tr class="${cls}" data-key="${escapeHtml(key)}">
+  return `<tr class="${cls}" data-key="${escapeHtml(key)}" tabindex="0" aria-label="${escapeHtml(`${tr.artist} – ${tr.name}`)}">
     <td class="c-state">${stateCell(tr)}</td>
     <td class="c-no no">${String(i + 1).padStart(2, "0")}:</td>
     <td><div class="track">${cover}<div class="text"><span class="title" title="${escapeHtml(tr.name)}">${escapeHtml(tr.name)}</span>
@@ -638,7 +650,7 @@ function tracksHtml(scope, c) {
     const parts = [];
     if (state.filter !== "all") parts.push(state.filter === "proposal" ? t("filter.proposal") : statusLabel(state.filter));
     if (state.finding) parts.push(t(`finding.${state.finding}`));
-    if (state.query.trim()) parts.push(`„${state.query.trim()}“`);
+    if (state.query.trim()) parts.push(t("filter.query", { q: state.query.trim() }));
     active = `<div class="filterbar"><span>${te("filter.active")}: <b>${parts.map(escapeHtml).join(" · ")}</b> · ${te("footnote.filtered", { shown: rows.length, total: scope.length })}</span>
       <button class="btn sm" type="button" data-action="clear-filters">${icon("close", "sm")}${te("filter.clear")}</button></div>`;
   }
@@ -723,18 +735,51 @@ function renderAll() {
   if (state.openKey) renderDrawer(true);
 }
 
+const RENDER_INTERVAL = 250;
+const SELECT_GRACE = 3000;
 let frame = 0;
+let lastRender = 0;
+let selectSince = 0;
+
+function choosing() {
+  const active = document.activeElement;
+  if (!active || active.tagName !== "SELECT" || !$("#main").contains(active)) {
+    selectSince = 0;
+    return false;
+  }
+  selectSince = selectSince || performance.now();
+  return performance.now() - selectSince < SELECT_GRACE;
+}
+
+function focusMark() {
+  const active = document.activeElement;
+  if (!active || !$("#main").contains(active)) return null;
+  if (active.id) return `#${CSS.escape(active.id)}`;
+  const row = active.closest("tr.row");
+  if (!row) return null;
+  const rowSelector = `tr.row[data-key="${CSS.escape(row.dataset.key)}"]`;
+  return active.dataset.trackAction ? `${rowSelector} [data-track-action="${CSS.escape(active.dataset.trackAction)}"]` : rowSelector;
+}
+
+function renderMainKeepingFocus() {
+  const mark = focusMark();
+  renderMain();
+  if (mark) $(mark, $("#main"))?.focus({ preventScroll: true });
+}
+
 function scheduleRender() {
   if (frame) return;
-  frame = requestAnimationFrame(() => {
+  const wait = Math.max(0, lastRender + RENDER_INTERVAL - performance.now());
+  frame = setTimeout(() => requestAnimationFrame(() => {
     frame = 0;
+    lastRender = performance.now();
     renderTopbar();
     renderPlaylists();
-    renderMain();
+    if (choosing()) scheduleRender(); else renderMainKeepingFocus();
     renderActivity();
     renderHealth();
     renderQuality();
-  });
+  }), wait);
 }
 
 function matchChart(verify, settings) {
@@ -807,7 +852,7 @@ function renderDrawer(keepPlayback) {
   const proposal = tr.proposal;
   const isBusy = Boolean(tr.step);
   const disabled = isBusy ? `disabled title="${te("track.busy")}"` : "";
-  const external = (href, html) => `<a href="${escapeHtml(href)}" target="_blank" rel="noopener">${html}</a>`;
+  const external = (href, html) => `<a href="${escapeHtml(safeHref(href))}" target="_blank" rel="noopener">${html}</a>`;
   const section = (labelKey, body, cls = "") => `<section class="panel section ${cls}"><h3 class="label">${te(labelKey)}</h3>${body}</section>`;
 
   let proposalSection = "";
@@ -824,7 +869,7 @@ function renderDrawer(keepPlayback) {
       <div class="d-actions" style="margin-top:12px">
         <button class="btn primary" type="button" data-action="apply-proposal" ${disabled}>${icon("check", "sm")}${te("action.applyProposal")}</button>
         <button class="btn" type="button" data-action="reject-proposal" ${disabled}>${icon("close", "sm")}${te("action.reject")}</button>
-        <a class="btn soft" href="${escapeHtml(proposal.page || proposal.url)}" target="_blank" rel="noopener">${sourceIcon(proposal.url)}${te("action.openSource")}</a>
+        <a class="btn soft" href="${escapeHtml(safeHref(proposal.page || proposal.url))}" target="_blank" rel="noopener">${sourceIcon(proposal.url)}${te("action.openSource")}</a>
       </div>
       <p class="hint">${te("proposal.hint")}</p>`, "highlight");
   }
@@ -922,14 +967,20 @@ function drawerPill(tr) {
 }
 
 function openDrawer(key) {
+  const opened = Boolean(state.openKey);
   state.openKey = key;
   history.replaceState(null, "", `#track=${enc(key)}`);
   renderDrawer(false);
   $$("tr.row.sel").forEach((r) => r.classList.remove("sel"));
   $$("tr.row").find((r) => r.dataset.key === key)?.classList.add("sel");
+  if (!opened) $('#drawer [data-action="close-drawer"]')?.focus({ preventScroll: true });
 }
 
 function closeDrawer() {
+  const returnTo = state.openKey;
+  if (returnTo && $("#drawer").contains(document.activeElement)) {
+    $$("tr.row").find((r) => r.dataset.key === returnTo)?.focus({ preventScroll: true });
+  }
   state.openKey = null;
   const drawer = $("#drawer");
   drawer.classList.remove("on");
@@ -945,7 +996,8 @@ function exportCsv() {
   const number = new Intl.NumberFormat(locale(), { maximumFractionDigits: 3, useGrouping: false });
   const num = (value) => (value == null ? "" : number.format(value));
   const cell = (value) => {
-    const text = String(value ?? "");
+    let text = String(value ?? "");
+    if (/^[=+@\t\r]/.test(text) || /^-(?![\d.,\s]+$)/.test(text)) text = `'${text}`;
     return /["\n\r]/.test(text) || text.includes(separator) ? `"${text.replace(/"/g, '""')}"` : text;
   };
   const columns = ["playlist", "artist", "title", "album", "spotifyLength", "fileLength", "leadSilence", "tailSilence",
@@ -957,7 +1009,7 @@ function exportCsv() {
     lines.push([
       pl.name, tr.artist, tr.name, tr.album, num(tr.duration), num(check.file_len), num(check.lead), num(check.tail),
       num(verify.ber), verify.verdict || "", statusLabel(statusOf(tr)), [check.codec, check.bitrate].filter(Boolean).join(" "),
-      check.cutoff_measured ? (check.cutoff == null ? "full" : num(check.cutoff)) : "", (tr.source || {}).url || "", tr.file || "",
+      check.cutoff_measured ? (check.cutoff == null ? t("quality.full") : num(check.cutoff)) : "", (tr.source || {}).url || "", tr.file || "",
       (tr.notes || []).map(noteText).join(" | "),
     ].map(cell).join(separator));
   }
@@ -1147,10 +1199,12 @@ document.addEventListener("click", (event) => {
   if (close) close.closest("dialog").close();
 });
 
+let searchTimer = 0;
 $("#search").addEventListener("input", (event) => {
   state.query = event.target.value;
   if (state.query.trim()) state.view = "tracks";
-  renderMain();
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(renderMainKeepingFocus, 150);
 });
 document.addEventListener("change", (event) => {
   if (event.target.id === "sort") { state.sort = event.target.value; renderMain(); }
@@ -1158,8 +1212,10 @@ document.addEventListener("change", (event) => {
   if (event.target.id === "pl-sort") { state.plSort = event.target.value; renderMain(); }
 });
 document.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter" && event.key !== " ") return;
   const card = event.target.closest?.(".pl-card[data-playlist]");
-  if (card && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); card.click(); }
+  if (card) { event.preventDefault(); card.click(); return; }
+  if (event.target.matches?.("tr.row")) { event.preventDefault(); openDrawer(event.target.dataset.key); }
 });
 document.addEventListener("keydown", (event) => {
   const typing = /^(input|textarea|select)$/i.test(document.activeElement.tagName);
@@ -1168,7 +1224,8 @@ document.addEventListener("keydown", (event) => {
 });
 window.addEventListener("hashchange", () => {
   const m = location.hash.match(/^#track=(.+)$/);
-  if (m) openDrawer(decodeURIComponent(m[1])); else if (state.openKey) closeDrawer();
+  const key = m ? decodeKey(m[1]) : "";
+  if (key && findTrack(key)) openDrawer(key); else if (state.openKey) closeDrawer();
 });
 $("#btn-theme").addEventListener("click", () => {
   const current = document.documentElement.dataset.theme
@@ -1414,9 +1471,6 @@ function validateDraft() {
   if (!errors.accept_ber && !errors.strong_ber && d.strong_ber > d.accept_ber) errors.strong_ber = { code: "strong_above_accept", params: {} };
   for (const key of ["bad_source_words", "not_original_words"]) {
     if (!String(d[key]).trim()) errors[key] = { code: "required", params: {} };
-    else {
-      try { new RegExp(d[key], "i"); } catch (e) { errors[key] = { code: "invalid_regex", params: { error: e.message } }; }
-    }
   }
   if (!d.audio_providers.length) errors.audio_providers = { code: "select_one", params: {} };
   if (!d.candidate_sources.length) errors.candidate_sources = { code: "select_one", params: {} };
@@ -1573,7 +1627,7 @@ function depsPageHtml() {
         <span class="ver">${escapeHtml(item.version || "")}${update}</span>
         <span class="pill ${cls}">${escapeHtml(status)}</span></div>`;
     }).join("");
-    const links = deps.links.map((l) => `<a href="${escapeHtml(l.url)}" target="_blank" rel="noopener"><b>${escapeHtml(l.name)}</b><span>${te(`linkInfo.${l.id}`)}</span></a>`).join("");
+    const links = deps.links.map((l) => `<a href="${escapeHtml(safeHref(l.url))}" target="_blank" rel="noopener"><b>${escapeHtml(l.name)}</b><span>${te(`linkInfo.${l.id}`)}</span></a>`).join("");
     body = `<div class="group"><div class="g-head">${te("deps.components")}</div><div class="g-body">${rows}</div></div>
       <div class="page-actions">
         <button class="btn" type="button" data-install="update-python">${icon("download", "sm")}${te(deps.packaged ? "deps.updateYtdlp" : "deps.updatePython")}</button>
@@ -1953,8 +2007,25 @@ $("#help-nav").addEventListener("click", (event) => {
   renderHelp();
 });
 
+let stateRequest = 0;
+let reloadTimer = 0;
+let nameCache = null;
+
+function trackNames() {
+  if (!nameCache) nameCache = new Map(allTracks().map(({ tr }) => [tr.id, `${tr.artist} – ${tr.name}`]));
+  return nameCache;
+}
+
+function reloadSoon() {
+  clearTimeout(reloadTimer);
+  reloadTimer = setTimeout(() => loadState().catch(() => {}), 150);
+}
+
 async function loadState() {
+  const ticket = ++stateRequest;
   const data = await api("/api/state");
+  if (ticket !== stateRequest) return;
+  nameCache = null;
   state.project = data.project;
   state.library = data.library;
   state.meta = data.settings_meta;
@@ -2009,14 +2080,15 @@ function connectEvents() {
         renderHealth();
         break;
       case "library":
-        loadState();
+      case "resync":
+        reloadSoon();
         break;
       case "project":
         closeDrawer();
         state.selected = "all";
         state.filter = "all";
         state.lastJob = null;
-        loadState();
+        reloadSoon();
         break;
       case "settings":
         state.library.settings = event.settings;
@@ -2027,7 +2099,10 @@ function connectEvents() {
     }
   };
   source.onerror = () => { if (closed) source.close(); else say(t("error.server_unreachable"), true); };
-  source.onopen = () => { if ($("#statusline").classList.contains("error")) say(t("toast.reconnected")); };
+  source.onopen = () => {
+    if ($("#statusline").classList.contains("error")) say(t("toast.reconnected"));
+    reloadSoon();
+  };
 }
 
 translatePage();
@@ -2036,7 +2111,7 @@ loadState()
   .then(() => {
     connectEvents();
     const m = location.hash.match(/^#track=(.+)$/);
-    if (m && findTrack(decodeURIComponent(m[1]))) openDrawer(decodeURIComponent(m[1]));
+    if (m && findTrack(decodeKey(m[1]))) openDrawer(decodeKey(m[1]));
   })
   .catch((error) => {
     $("#main").innerHTML = `<section class="panel welcome"><div class="dropzone"><h2>${te("app.serverDown")}</h2><p>${escapeHtml(error.message)}</p></div></section>`;
