@@ -197,3 +197,34 @@ def test_loud_peaks_and_quiet_files_are_reported_without_changing_the_verdict(en
     monkeypatch.setattr(analysis, "loudness", lambda path: None)
     check = engine.do_check(tr, song)
     assert check["notes"] == [] and check["lufs"] is None
+
+
+def test_a_job_is_finished_only_after_the_library_was_saved(engine, monkeypatch):
+    order = []
+    real_save = engine.lib.save
+
+    def save():
+        order.append(("save", engine.jobs[job_id]["state"]))
+        real_save()
+
+    monkeypatch.setattr(engine.lib, "save", save)
+    job_id = engine.submit("organize", "organize")
+    deadline = time.monotonic() + 10
+    while engine.jobs[job_id]["finished"] is None and time.monotonic() < deadline:
+        time.sleep(0.02)
+    assert order[-1] == ("save", "running")
+    assert engine.jobs[job_id]["state"] == "done"
+
+
+def test_a_failing_save_does_not_stop_the_worker(engine, monkeypatch):
+    def broken():
+        raise OSError("disk full")
+
+    monkeypatch.setattr(engine.lib, "save", broken)
+    first = engine.submit("organize", "organize")
+    second = engine.submit("organize", "organize")
+    deadline = time.monotonic() + 10
+    while engine.jobs[second]["finished"] is None and time.monotonic() < deadline:
+        time.sleep(0.02)
+    assert engine.jobs[first]["state"] == engine.jobs[second]["state"] == "done"
+    assert any(e["code"] == "save_failed" for e in engine.bus.logs)

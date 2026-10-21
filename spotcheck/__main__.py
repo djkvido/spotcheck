@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import socket
+import sys
 import threading
 import time
 import urllib.request
@@ -128,6 +129,65 @@ def check_playlist(url: str) -> int:
     return 0 if songs else 1
 
 
+def check_files(lib, every_file: bool) -> int:
+    from .engine import TERMINAL_STATES, Bus, Engine
+    from .library import track_key
+
+    engine = Engine(lib, Bus())
+    keys = [track_key(pl, tr) for pl, tr in engine.select(only="files")] if every_file else lib.changed_tracks()
+    if not keys:
+        print("No files need a check.", file=sys.stderr)
+        return 0
+    flags = {"validate": True, "verify": True}
+    job_id = engine.submit("process", "check", {"count": len(keys)}, track_ids=keys, flags=flags)
+    job = engine.jobs[job_id]
+    shown, reported = -1, time.monotonic()
+    try:
+        while job["state"] not in TERMINAL_STATES:
+            time.sleep(0.5)
+            if job["done"] != shown and time.monotonic() - reported >= 5:
+                shown, reported = job["done"], time.monotonic()
+                print(f"Checked {job['done']} of {job['total']} files", file=sys.stderr)
+    except KeyboardInterrupt:
+        engine.cancel(job_id)
+        while job["state"] not in TERMINAL_STATES:
+            time.sleep(0.2)
+        raise
+    print(f"Checked {job['done']} of {job['total']} files", file=sys.stderr)
+    return int(job["summary"].get("failed") or 0)
+
+
+def readable_output() -> None:
+    for stream in (sys.stdout, sys.stderr):
+        if stream is not None and hasattr(stream, "reconfigure"):
+            stream.reconfigure(errors="replace") if stream.isatty() else stream.reconfigure(encoding="utf-8")
+
+
+def headless(args: argparse.Namespace) -> int:
+    from . import projects, report, terms
+    from .library import Library
+
+    if running_instance(args.host, args.port):
+        print("SpotCheck is running. Close it first, or use the app.", file=sys.stderr)
+        return 1
+    if not terms.accepted():
+        print("Open SpotCheck once and accept the terms of use first.", file=sys.stderr)
+        return 1
+    project = projects.current()
+    projects.activate(project)
+    lib = Library()
+    lib.link_files()
+    failed = 0
+    if args.check:
+        try:
+            failed = check_files(lib, args.check == "all")
+        except KeyboardInterrupt:
+            return 130
+    data = report.summary(lib, project)
+    print(report.render(data, args.report or "text"))
+    return 1 if failed else report.exit_code(data)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="spotcheck",
@@ -146,6 +206,22 @@ def main() -> None:
         "--network", action="store_true", help="with --diagnostics, also test the connection to the services"
     )
     parser.add_argument("--check-playlist", metavar="URL", help="load one playlist, print what happened, then exit")
+    parser.add_argument(
+        "--check",
+        nargs="?",
+        const="changed",
+        choices=("changed", "all"),
+        help="check and verify new and changed files (or all files) of the current project without the app, "
+        "then print the report",
+    )
+    parser.add_argument(
+        "--report",
+        nargs="?",
+        const="text",
+        choices=("text", "json", "csv"),
+        help="print the state of the current project as text, JSON or CSV, then exit; "
+        "the exit code is 2 when a file is wrong or needs review",
+    )
     parser.add_argument("--packaged", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--version", action="version", version=f"spotcheck {__version__}")
     args = parser.parse_args()
@@ -162,6 +238,7 @@ def main() -> None:
         runtime.prepare(False)
         logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
         configure(args.home)
+    readable_output()
     if args.diagnostics:
         print(diagnostics.report(network=args.network))
         raise SystemExit(0 if deps.status(check_updates=False)["ready"] else 1)
@@ -169,6 +246,10 @@ def main() -> None:
         raise SystemExit(check_playlist(args.check_playlist))
     if args.setup:
         raise SystemExit(run_setup())
+    if args.check or args.report:
+        if not args.packaged:
+            logging.getLogger().setLevel(logging.WARNING)
+        raise SystemExit(headless(args))
 
     if running_instance(args.host, args.port):
         url = f"http://{args.host}:{args.port}/"

@@ -48,6 +48,7 @@ SPOTDL_LOAD_TIMEOUT = 1800
 SPOTDL_FOUND = re.compile(r"Found (\d+) songs? in (.+?)(?: \((?:Playlist|Album|Song)\))?\s*$")
 LOG_LEVELS = {"info": logging.INFO, "warn": logging.WARNING, "error": logging.ERROR}
 INTERRUPTIBLE = ("process", "sync")
+TERMINAL_STATES = ("done", "failed", "cancelled")
 JOB_HISTORY = 100
 
 
@@ -228,7 +229,7 @@ class Engine:
             self.jobs[job["id"]] = job
             self.order.append(job["id"])
             for old in self.order[:-JOB_HISTORY]:
-                if self.jobs[old]["state"] in ("done", "failed", "cancelled"):
+                if self.jobs[old]["state"] in TERMINAL_STATES:
                     del self.jobs[old]
             self.order = [i for i in self.order if i in self.jobs]
         self.queue.put(job["id"])
@@ -238,7 +239,7 @@ class Engine:
     def cancel(self, job_id: str) -> bool:
         with self.lock:
             job = self.jobs.get(job_id)
-            if not job or job["state"] in ("done", "failed", "cancelled"):
+            if not job or job["state"] in TERMINAL_STATES:
                 return False
             job["_cancel"] = True
             if job["state"] == "queued":
@@ -266,27 +267,33 @@ class Engine:
                 continue
             job["state"], job["started"] = "running", time.time()
             self._emit_job(job)
+            outcome = self._run_job(handlers[job["kind"]], job)
             try:
-                handlers[job["kind"]](job, **job["_params"])
-                job["state"] = "cancelled" if job["_cancel"] else "done"
-            except Cancelled:
-                job["state"] = "cancelled"
-            except JobError as exc:
-                job["state"] = "failed"
-                job["summary"] = {**job["summary"], "error": exc.code}
-                self.bus.log("error", exc.code)
+                self.lib.save()
+                sources.flush_index()
+                if job["kind"] in ("process", "apply"):
+                    self.prune_candidates()
             except Exception as exc:
-                log.exception("Job %s (%s) failed", job["id"], job["kind"])
-                job["state"] = "failed"
-                job["summary"] = {**job["summary"], "error": str(exc)}
-                self.bus.log("error", "job_failed", error=str(exc))
-            job["finished"], job["current"] = time.time(), ""
+                log.exception("Saving after job %s failed", job["id"])
+                self.bus.log("error", "save_failed", error=str(exc))
+            job["state"], job["finished"], job["current"] = outcome, time.time(), ""
             self._emit_job(job)
-            self.lib.save()
-            sources.flush_index()
-            if job["kind"] in ("process", "apply"):
-                self.prune_candidates()
             self.bus.emit({"type": "library"})
+
+    def _run_job(self, handler: Callable[..., None], job: dict) -> str:
+        try:
+            handler(job, **job["_params"])
+            return "cancelled" if job["_cancel"] else "done"
+        except Cancelled:
+            return "cancelled"
+        except JobError as exc:
+            job["summary"] = {**job["summary"], "error": exc.code}
+            self.bus.log("error", exc.code)
+        except Exception as exc:
+            log.exception("Job %s (%s) failed", job["id"], job["kind"])
+            job["summary"] = {**job["summary"], "error": str(exc)}
+            self.bus.log("error", "job_failed", error=str(exc))
+        return "failed"
 
     @staticmethod
     def _check_cancel(job: dict) -> None:
