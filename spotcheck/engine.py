@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures as cf
+import contextlib
 import json
 import logging
 import os
@@ -34,6 +35,7 @@ from .library import (
 log = logging.getLogger(__name__)
 
 CANDIDATE_CACHE_DAYS = 14
+CANDIDATE_CACHE_BYTES = 3_000_000_000
 SCAN_INTERVAL = 300
 FULL_PROCESS = {"download": True, "validate": True, "verify": True, "fix": True, "trim": True}
 YTDLP_FORMATS = {"opus": "bestaudio[acodec=opus]/bestaudio", "m4a": "bestaudio[ext=m4a]/bestaudio", "mp3": "bestaudio"}
@@ -153,10 +155,32 @@ class Engine:
             shutil.rmtree(p, ignore_errors=True) if p.is_dir() else p.unlink(missing_ok=True)
         for pl in self.lib.data["playlists"]:
             fileops.remove_leftovers(self.lib.folder(pl))
+        self.prune_candidates()
+
+    def prune_candidates(self) -> int:
+        keep = {
+            tr["proposal"]["audio"]
+            for pl in self.lib.data["playlists"]
+            for tr in pl["tracks"]
+            if tr.get("proposal") and tr["proposal"].get("audio")
+        }
         cutoff = time.time() - CANDIDATE_CACHE_DAYS * 86400
+        files = []
         for p in paths().candidates.glob("*"):
-            if p.stat().st_mtime < cutoff:
-                p.unlink(missing_ok=True)
+            try:
+                files.append((p, p.stat()))
+            except OSError:
+                continue
+        total = removed = 0
+        for p, st in sorted(files, key=lambda item: item[1].st_mtime, reverse=True):
+            if p.name in keep:
+                continue
+            total += st.st_size
+            if st.st_mtime < cutoff or total > CANDIDATE_CACHE_BYTES:
+                with contextlib.suppress(OSError):
+                    p.unlink()
+                    removed += 1
+        return removed
 
     def busy(self) -> bool:
         with self.lock:
@@ -257,6 +281,9 @@ class Engine:
             job["finished"], job["current"] = time.time(), ""
             self._emit_job(job)
             self.lib.save()
+            sources.flush_index()
+            if job["kind"] in ("process", "apply"):
+                self.prune_candidates()
             self.bus.emit({"type": "library"})
 
     @staticmethod

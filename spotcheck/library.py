@@ -36,6 +36,7 @@ TRACK_DEFAULTS: dict[str, Any] = {
     "rejected_ids": [],
     "backups": [],
     "numbered": False,
+    "source_probe": None,
 }
 
 
@@ -356,6 +357,7 @@ class Library:
             if not self.music_available():
                 log.warning("Music folder %s is not available; files stay linked", downloads)
                 return False
+            before = self._link_state()
             for pl in self.data["playlists"]:
                 taken: set[str] = set()
                 for tr in pl["tracks"]:
@@ -371,13 +373,31 @@ class Library:
                             tr["file"] = found.relative_to(downloads).as_posix()
                             taken.add(tr["file"])
                     if tr["file"] and not (tr.get("source") or {}).get("url"):
-                        source = file_source(downloads / tr["file"])
-                        if source:
-                            via = "spotdl" if tr.get("origin", "spotify") == "spotify" else "origin"
-                            tr["source"] = {**source, "via": via}
+                        self._probe_source(tr, downloads / tr["file"])
                     tr["status"] = compute_status(tr)
-            self.save()
+            if self._link_state() != before:
+                self.save()
         return True
+
+    def _link_state(self) -> list[tuple]:
+        return [
+            (tr.get("file"), tr.get("status"), (tr.get("source") or {}).get("id"), tr.get("source_probe"))
+            for pl in self.data["playlists"]
+            for tr in pl["tracks"]
+        ]
+
+    def _probe_source(self, tr: dict, path: Path) -> None:
+        try:
+            probe = [tr["file"], *self.signature(path)]
+        except OSError:
+            return
+        if tr.get("source_probe") == probe:
+            return
+        source = file_source(path)
+        if source:
+            via = "spotdl" if tr.get("origin", "spotify") == "spotify" else "origin"
+            tr["source"] = {**source, "via": via}
+        tr["source_probe"] = probe
 
     @staticmethod
     def signature(path: Path) -> list[int]:

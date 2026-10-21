@@ -1,3 +1,4 @@
+import json
 import time
 
 import pytest
@@ -150,3 +151,46 @@ def test_old_finished_jobs_are_forgotten(engine, monkeypatch):
         engine.jobs[engine.submit("organize", "organize")]["state"] = "done"
     assert first not in engine.jobs
     assert len(engine.order) == len(engine.jobs) == JOB_HISTORY
+
+
+def test_preview_lookups_are_written_in_batches(workspace, monkeypatch):
+    index = workspace.previews / "index.json"
+    sources._store_index_entry("a", {"none": True, "t": 1})
+    assert json.loads(index.read_text(encoding="utf-8")) == {"a": {"none": True, "t": 1}}
+    sources._store_index_entry("b", {"none": True, "t": 2})
+    assert "b" not in json.loads(index.read_text(encoding="utf-8"))
+    sources.flush_index()
+    assert set(json.loads(index.read_text(encoding="utf-8"))) == {"a", "b"}
+
+
+def test_candidate_cache_is_limited_but_keeps_open_proposals(engine, workspace, monkeypatch):
+    import os
+
+    monkeypatch.setattr("spotcheck.engine.CANDIDATE_CACHE_BYTES", 250)
+    engine.lib.upsert_playlist("https://open.spotify.com/playlist/A", "A", [make_song("t1")])
+    engine.lib.data["playlists"][0]["tracks"][0]["proposal"] = {"id": "x", "audio": "keep.webm"}
+    for n, name in enumerate(["old.webm", "newer.webm", "newest.webm", "keep.webm"]):
+        path = workspace.candidates / name
+        path.write_bytes(b"x" * 100)
+        os.utime(path, (1_000_000 + n, 1_000_000 + n))
+    os.utime(workspace.candidates / "newest.webm", None)
+    os.utime(workspace.candidates / "newer.webm", None)
+    engine.prune_candidates()
+    assert sorted(p.name for p in workspace.candidates.iterdir()) == ["keep.webm", "newer.webm", "newest.webm"]
+
+
+def test_an_unchanged_library_is_not_rewritten_on_every_scan(workspace, monkeypatch):
+    lib = Library()
+    pl = lib.upsert_playlist("https://open.spotify.com/playlist/A", "Mix", [make_song("t1", "One")])["playlist"]
+    folder = workspace.downloads / "Mix"
+    folder.mkdir()
+    (folder / "Artist - One.mp3").write_bytes(b"x")
+    probes = []
+    monkeypatch.setattr("spotcheck.library.file_source", lambda path: probes.append(path) or None)
+    lib.link_files()
+    assert pl["tracks"][0]["file"] == "Mix/Artist - One.mp3"
+    saves = []
+    monkeypatch.setattr(lib, "save", lambda: saves.append(1))
+    lib.link_files()
+    assert saves == []
+    assert len(probes) == 1

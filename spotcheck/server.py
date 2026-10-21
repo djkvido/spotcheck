@@ -244,6 +244,7 @@ def create_app(automation: bool = True) -> FastAPI:
             engine.start_automation()
         yield
         await asyncio.to_thread(lib().save)
+        await asyncio.to_thread(sources.flush_index)
 
     app = FastAPI(
         title="SpotCheck", version=__version__, docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan

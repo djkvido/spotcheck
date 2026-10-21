@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import string
 import subprocess
@@ -19,6 +20,8 @@ from rapidfuzz import fuzz
 from . import __version__, analysis, fileops
 from .config import paths
 
+log = logging.getLogger(__name__)
+
 USER_AGENT = {"User-Agent": f"SpotCheck/{__version__}"}
 DANCE_WORDS = (
     r"(?:bpm|samba|rumba|cha\s*-?\s*cha(?:\s*-?\s*cha)?|chachacha|paso\s*doble|pasodoble|jive|tempo|"
@@ -26,6 +29,9 @@ DANCE_WORDS = (
 )
 NO_PREVIEW_TTL = 7 * 86400
 ITUNES_DELAY = 3.2
+DEEZER_INTERVAL = 0.15
+DEEZER_QUOTA_PAUSE = 5.5
+INDEX_WRITE_INTERVAL = 5.0
 MAX_RESPONSE = 20_000_000
 
 YOUTUBE_ID = re.compile(r"(?:[?&]v=|youtu\.be/)([A-Za-z0-9_-]{11})")
@@ -33,6 +39,9 @@ SOUNDCLOUD_ID = re.compile(r"soundcloud(?:%3A|:)tracks(?:%3A|:)(\d+)|soundcloud\
 SOURCE_URL = re.compile(r"https?://(?:www\.|music\.|api\.)?(?:youtube\.com|youtu\.be|soundcloud\.com)/\S+")
 
 _index_lock = threading.Lock()
+_index: dict[str, Any] = {"path": None, "data": {}, "dirty": False, "written": 0.0}
+_deezer_lock = threading.Lock()
+_deezer_last = [0.0]
 _itunes_lock = threading.Lock()
 _ytmusic_lock = threading.Lock()
 _ytmusic = None
@@ -96,6 +105,22 @@ def file_source(path: Path) -> dict | None:
     return {"id": key, "url": url}
 
 
+def _deezer_search(query: str) -> dict:
+    url = "https://api.deezer.com/search?limit=10&q=" + urllib.parse.quote(query)
+    for attempt in range(2):
+        with _deezer_lock:
+            wait = _deezer_last[0] + DEEZER_INTERVAL - time.monotonic()
+            if wait > 0:
+                time.sleep(wait)
+            _deezer_last[0] = time.monotonic()
+        data = http_get(url)
+        quota = isinstance(data.get("error"), dict) and data["error"].get("code") == 4
+        if not quota or attempt:
+            return data
+        time.sleep(DEEZER_QUOTA_PAUSE)
+    return data
+
+
 def _deezer(song: dict, errors: list[str]) -> list[dict]:
     title = clean_title(song["name"])
     queries = [
@@ -106,14 +131,13 @@ def _deezer(song: dict, errors: list[str]) -> list[dict]:
     found: list[dict] = []
     for q in dict.fromkeys(queries):
         try:
-            data = http_get("https://api.deezer.com/search?limit=10&q=" + urllib.parse.quote(q))
+            data = _deezer_search(q)
         except Exception as exc:
             errors.append(f"Deezer: {exc}")
             continue
         if "error" in data:
             errors.append(f"Deezer: {data['error']}")
             continue
-        time.sleep(0.15)
         found += [
             {
                 "src": "Deezer",
@@ -181,17 +205,33 @@ def _index_path() -> Path:
 
 
 def _load_index() -> dict:
-    try:
-        return json.loads(_index_path().read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
+    path = _index_path()
+    if _index["path"] != path:
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            data = {}
+        _index.update(path=path, data=data if isinstance(data, dict) else {}, dirty=False, written=0.0)
+    return _index["data"]
 
 
 def _store_index_entry(track_id: str, entry: dict) -> None:
     with _index_lock:
-        index = _load_index()
-        index[track_id] = entry
-        fileops.write_json(_index_path(), index)
+        _load_index()[track_id] = entry
+        _index["dirty"] = True
+        if time.monotonic() - _index["written"] >= INDEX_WRITE_INTERVAL:
+            _write_index()
+
+
+def _write_index() -> None:
+    fileops.write_json(_index["path"], _index["data"])
+    _index["dirty"], _index["written"] = False, time.monotonic()
+
+
+def flush_index() -> None:
+    with _index_lock:
+        if _index["dirty"] and _index["path"] is not None:
+            _write_index()
 
 
 def get_preview(song: dict, st: dict, force: bool = False) -> dict | None:
@@ -272,7 +312,8 @@ def search_youtube_music(query: str, limit: int = 5) -> list[dict]:
 
                 _ytmusic = YTMusic()
             results = _ytmusic.search(query, filter="songs", limit=limit)
-    except Exception:
+    except Exception as exc:
+        log.warning("YouTube Music search failed for %r: %s", query, exc)
         return []
     return [
         {
@@ -291,11 +332,12 @@ def search_youtube_music(query: str, limit: int = 5) -> list[dict]:
 
 
 def _ytdlp_search(prefix: str, query: str, limit: int) -> list[dict]:
-    opts = {"quiet": True, "no_warnings": True, "extract_flat": True, "skip_download": True}
+    opts = {"quiet": True, "no_warnings": True, "extract_flat": True, "skip_download": True, "socket_timeout": 30}
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
             return ydl.extract_info(f"{prefix}{limit}:{query}", download=False).get("entries") or []
-    except Exception:
+    except Exception as exc:
+        log.warning("Search %s failed for %r: %s", prefix, query, exc)
         return []
 
 
