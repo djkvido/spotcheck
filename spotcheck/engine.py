@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import concurrent.futures as cf
 import json
 import logging
@@ -66,7 +67,16 @@ class Bus:
         if self.loop is None:
             return
         for q in list(self.subscribers):
-            self.loop.call_soon_threadsafe(q.put_nowait, event)
+            self.loop.call_soon_threadsafe(self.deliver, q, event)
+
+    @staticmethod
+    def deliver(q: asyncio.Queue, event: dict) -> None:
+        try:
+            q.put_nowait(event)
+        except asyncio.QueueFull:
+            while not q.empty():
+                q.get_nowait()
+            q.put_nowait({"type": "resync"})
 
     def log(self, level: str, code: str, track: str | None = None, **params: Any) -> None:
         event = {"type": "log", "t": time.time(), "level": level, "code": code, "params": params, "track": track}
@@ -265,6 +275,7 @@ class Engine:
         tr["file"] = path.relative_to(paths().downloads).as_posix()
         source = sources.file_source(path)
         tr["source"] = {**source, "via": via} if source else None
+        (paths().covers / f"{tr['id']}.jpg").unlink(missing_ok=True)
 
     @staticmethod
     def sync_source(tr: dict, path: Path) -> None:

@@ -14,6 +14,7 @@ from pathlib import Path
 from . import __version__, analysis, deps, diagnostics, runtime
 from .config import configure
 
+LOOPBACK = ("127.0.0.1", "localhost", "::1")
 SETUP_MESSAGES = {
     "command": "$ {text}",
     "output": "{text}",
@@ -133,7 +134,9 @@ def main() -> None:
         description="Keep a local music library in order: load playlists, find their tracks and verify every file.",
     )
     parser.add_argument("--home", help="workspace directory (default: $SPOTCHECK_HOME or the current directory)")
-    parser.add_argument("--host", default="127.0.0.1", help="address to listen on (default: 127.0.0.1)")
+    parser.add_argument(
+        "--host", default="127.0.0.1", choices=LOOPBACK, help="local address to listen on (default: 127.0.0.1)"
+    )
     parser.add_argument("--port", type=int, default=8765, help="port to listen on (default: 8765)")
     parser.add_argument("--no-browser", action="store_true", help="do not open the browser")
     parser.add_argument("--setup", action="store_true", help="check and install missing dependencies, then exit")

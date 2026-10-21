@@ -5,6 +5,9 @@ import importlib.util
 import json
 import os
 import re
+import shutil
+import subprocess
+import sys
 import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -46,6 +49,8 @@ MEDIA_TYPES = {
 OPEN_BEFORE_TERMS = {"/api/terms", "/api/quit"}
 FLAGS = ("download", "validate", "verify", "fix", "trim", "force_fix")
 MAX_RANGE = 4 * 1024 * 1024
+EVENT_QUEUE = 2000
+PICKER_TIMEOUT = 900
 
 
 class UrlsRequest(BaseModel):
@@ -142,17 +147,16 @@ def export_target_error(raw: str, music: Path) -> str | None:
     return None
 
 
-def read_range(path: Path, header: str | None) -> tuple[int, int, int, bytes]:
+def read_range(path: Path, header: str | None) -> tuple[int, int, int, bytes] | None:
     size = path.stat().st_size
     m = re.match(r"bytes=(\d*)-(\d*)$", header or "")
-    if m and (m.group(1) or m.group(2)):
-        if m.group(1):
-            start = int(m.group(1))
-            end = int(m.group(2)) if m.group(2) else size - 1
-        else:
-            start, end = max(size - int(m.group(2)), 0), size - 1
+    if not (m and (m.group(1) or m.group(2))):
+        return None
+    if m.group(1):
+        start = int(m.group(1))
+        end = int(m.group(2)) if m.group(2) else size - 1
     else:
-        return size, 0, size - 1, path.read_bytes()
+        start, end = max(size - int(m.group(2)), 0), size - 1
     end = min(end, size - 1, start + MAX_RANGE - 1)
     if start > end:
         return size, start, end, b""
@@ -165,10 +169,13 @@ def read_range(path: Path, header: str | None) -> tuple[int, int, int, bytes]:
 async def ranged_file(path: Path, request: Request) -> Response:
     media = MEDIA_TYPES.get(path.suffix.lower(), "application/octet-stream")
     header = request.headers.get("range")
-    size, start, end, data = await asyncio.to_thread(read_range, path, header)
-    if header and start > end:
+    found = await asyncio.to_thread(read_range, path, header)
+    if found is None:
+        return FileResponse(path, media_type=media, headers={"Accept-Ranges": "bytes"})
+    size, start, end, data = found
+    if start > end:
         return Response(status_code=416, headers={"Content-Range": f"bytes */{size}"})
-    if not header or not data:
+    if not data:
         return Response(data, media_type=media, headers={"Accept-Ranges": "bytes"})
     headers = {"Accept-Ranges": "bytes", "Content-Range": f"bytes {start}-{end}/{size}"}
     return Response(data, status_code=206, media_type=media, headers=headers)
@@ -177,23 +184,37 @@ async def ranged_file(path: Path, request: Request) -> Response:
 _picker_lock = threading.Lock()
 
 
-def pick_folder(initial: str | None) -> str | None:
-    import tkinter
-    from tkinter import filedialog
+def apple_script_folder(start: str) -> list[str]:
+    location = start.replace("\\", "\\\\").replace('"', '\\"')
+    return ["osascript", "-e", f'POSIX path of (choose folder default location POSIX file "{location}")']
 
+
+def pick_folder(initial: str | None) -> str | None:
+    start = initial if initial and Path(initial).is_dir() else str(Path.home())
     with _picker_lock:
-        root = tkinter.Tk()
-        root.withdraw()
-        root.attributes("-topmost", True)
-        try:
-            start = initial if initial and Path(initial).is_dir() else str(Path.home())
-            chosen = filedialog.askdirectory(parent=root, initialdir=start, mustexist=False)
-        finally:
-            root.destroy()
+        if sys.platform == "darwin":
+            try:
+                result = analysis.run_text(apple_script_folder(start), timeout=PICKER_TIMEOUT)
+            except (OSError, subprocess.SubprocessError):
+                return None
+            chosen = result.stdout.strip() if result.returncode == 0 else ""
+        else:
+            import tkinter
+            from tkinter import filedialog
+
+            root = tkinter.Tk()
+            root.withdraw()
+            root.attributes("-topmost", True)
+            try:
+                chosen = filedialog.askdirectory(parent=root, initialdir=start, mustexist=False)
+            finally:
+                root.destroy()
     return str(Path(chosen)) if chosen else None
 
 
 def folder_picker_available() -> bool:
+    if sys.platform == "darwin":
+        return shutil.which("osascript") is not None
     return importlib.util.find_spec("tkinter") is not None
 
 
@@ -251,6 +272,14 @@ def create_app(automation: bool = True) -> FastAPI:
             raise HTTPException(404, "track_not_found")
         return pl, tr
 
+    def require_tracks_idle(keys: list[str] | None) -> None:
+        if not keys:
+            return
+        index = lib().track_index()
+        for key in keys:
+            tr = index[key][1] if key in index else track_or_404(key)[1]
+            require_track_idle(tr)
+
     def require_idle() -> None:
         if engine.busy():
             raise HTTPException(409, "busy")
@@ -270,8 +299,7 @@ def create_app(automation: bool = True) -> FastAPI:
     async def index() -> FileResponse:
         return FileResponse(STATIC_DIR / "index.html", headers={"Cache-Control": "no-store"})
 
-    @app.get("/api/state")
-    async def state() -> dict[str, Any]:
+    def snapshot() -> dict[str, Any]:
         return {
             "project": projects.current(),
             "library": lib().public(),
@@ -282,6 +310,10 @@ def create_app(automation: bool = True) -> FastAPI:
             "version": __version__,
             "terms": terms.public(),
         }
+
+    @app.get("/api/state")
+    async def state() -> dict[str, Any]:
+        return await asyncio.to_thread(snapshot)
 
     @app.post("/api/terms")
     async def accept_terms(body: TermsRequest) -> dict[str, Any]:
@@ -301,7 +333,7 @@ def create_app(automation: bool = True) -> FastAPI:
 
     @app.get("/api/events")
     async def events(request: Request) -> StreamingResponse:
-        q: asyncio.Queue = asyncio.Queue()
+        q: asyncio.Queue = asyncio.Queue(maxsize=EVENT_QUEUE)
         bus.subscribers.add(q)
 
         async def stream():
@@ -443,8 +475,7 @@ def create_app(automation: bool = True) -> FastAPI:
             raise HTTPException(400, "no_action")
         if body.playlist_id and not lib().playlist(body.playlist_id):
             raise HTTPException(404, "playlist_not_found")
-        for key in body.track_ids or []:
-            require_track_idle(track_or_404(key)[1])
+        require_tracks_idle(body.track_ids)
         return {
             "job": engine.submit(
                 "process",
@@ -482,8 +513,7 @@ def create_app(automation: bool = True) -> FastAPI:
     async def fix_tags(body: ScopeRequest) -> dict[str, str]:
         if body.playlist_id and not lib().playlist(body.playlist_id):
             raise HTTPException(404, "playlist_not_found")
-        for key in body.track_ids or []:
-            require_track_idle(track_or_404(key)[1])
+        require_tracks_idle(body.track_ids)
         items = engine.select(body.playlist_id, body.track_ids, "files")
         count = sum(1 for _, tr in items if (tr.get("check") or {}).get("tags_missing"))
         if not count:

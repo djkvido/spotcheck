@@ -26,6 +26,7 @@ DANCE_WORDS = (
 )
 NO_PREVIEW_TTL = 7 * 86400
 ITUNES_DELAY = 3.2
+MAX_RESPONSE = 20_000_000
 
 YOUTUBE_ID = re.compile(r"(?:[?&]v=|youtu\.be/)([A-Za-z0-9_-]{11})")
 SOUNDCLOUD_ID = re.compile(r"soundcloud(?:%3A|:)tracks(?:%3A|:)(\d+)|soundcloud\.com/tracks/(\d+)")
@@ -64,9 +65,13 @@ def words_pattern(words: str) -> re.Pattern[str]:
 
 
 def http_get(url: str, binary: bool = False, timeout: float = 25) -> Any:
+    if not url.lower().startswith("https://"):
+        raise ValueError(f"Only secure addresses are fetched: {url[:80]}")
     req = urllib.request.Request(url, headers=USER_AGENT)
     with urllib.request.urlopen(req, timeout=timeout) as r:
-        data = r.read()
+        data = r.read(MAX_RESPONSE + 1)
+    if len(data) > MAX_RESPONSE:
+        raise ValueError(f"Response is larger than {MAX_RESPONSE // 1_000_000} MB: {url[:80]}")
     return data if binary else json.loads(data.decode("utf-8"))
 
 

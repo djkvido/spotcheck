@@ -153,6 +153,10 @@ class Library:
     def playlist(self, pid: str) -> dict | None:
         return next((p for p in self.data["playlists"] if p["id"] == pid), None)
 
+    def track_index(self) -> dict[str, tuple[dict, dict]]:
+        with self.lock:
+            return {track_key(pl, tr): (pl, tr) for pl in self.data["playlists"] for tr in pl["tracks"]}
+
     def find_track(self, key: str) -> tuple[dict | None, dict | None]:
         pid, _, tid = key.rpartition(":")
         for pl in self.data["playlists"]:
