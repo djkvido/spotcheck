@@ -24,6 +24,7 @@ Notable changes of each release. The format follows [Keep a Changelog](https://k
 - Playlists with the same name get their own folders, and files stay linked while the music folder is unavailable, for example on a disconnected drive.
 - A hanging download or FFmpeg call is stopped together with all its child processes, and cancelling a job stops it immediately.
 - The folder dialog works on macOS.
+- Starting SpotCheck again finds the running app even when it had to use another port, instead of starting a second copy on the same library.
 - A failed single song was reported with the text of another message.
 
 ### Security
