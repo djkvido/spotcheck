@@ -894,6 +894,7 @@ function renderDrawer(keepPlayback) {
   const qualitySection = hasFile && check.file_len != null ? section("section.quality", `<dl class="facts">
       ${fact("fact.format", check.codec ? te("fact.formatValue", { codec: check.codec, kbps: check.bitrate ?? "–" }) : "–")}
       ${fact("fact.range", quality ? escapeHtml(rangeText(check)) : te("quality.unknown"))}
+      ${check.lufs != null ? fact("fact.loudness", te(check.true_peak != null ? "fact.loudnessValue" : "fact.loudnessOnly", { lufs: fmt(check.lufs), peak: fmt(check.true_peak), lra: fmt(check.lra ?? 0) })) : ""}
       ${fact("fact.quality", quality ? `<span class="pill ${QUALITY_CLASS[quality]}">${te(`quality.${quality}`)}</span> <span class="dim">${te(`quality.${quality}.title`)}</span>` : `<span class="dim">${te("quality.unknown.title")}</span>`, "text")}
       ${check.tags_missing ? fact("fact.tags", tagsMissing.length ? te("fact.tagsMissing", { fields: tagsMissing.map((f) => t(`tag.${f}`)).join(", ") }) : te("fact.tagsOk"), "text") : ""}
     </dl><p class="hint">${te("quality.hint")}</p>`) : "";
@@ -1001,7 +1002,7 @@ function exportCsv() {
     return /["\n\r]/.test(text) || text.includes(separator) ? `"${text.replace(/"/g, '""')}"` : text;
   };
   const columns = ["playlist", "artist", "title", "album", "spotifyLength", "fileLength", "leadSilence", "tailSilence",
-    "ber", "verdict", "status", "format", "cutoff", "source", "file", "notes"];
+    "ber", "verdict", "status", "format", "cutoff", "loudness", "truePeak", "source", "file", "notes"];
   const lines = [columns.map((c) => cell(t(`csv.${c}`))).join(separator)];
   for (const { pl, tr } of scopeTracks()) {
     const check = tr.check || {};
@@ -1009,7 +1010,8 @@ function exportCsv() {
     lines.push([
       pl.name, tr.artist, tr.name, tr.album, num(tr.duration), num(check.file_len), num(check.lead), num(check.tail),
       num(verify.ber), verify.verdict || "", statusLabel(statusOf(tr)), [check.codec, check.bitrate].filter(Boolean).join(" "),
-      check.cutoff_measured ? (check.cutoff == null ? t("quality.full") : num(check.cutoff)) : "", (tr.source || {}).url || "", tr.file || "",
+      check.cutoff_measured ? (check.cutoff == null ? t("quality.full") : num(check.cutoff)) : "", num(check.lufs), num(check.true_peak),
+      (tr.source || {}).url || "", tr.file || "",
       (tr.notes || []).map(noteText).join(" | "),
     ].map(cell).join(separator));
   }

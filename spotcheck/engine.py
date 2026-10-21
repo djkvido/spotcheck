@@ -42,6 +42,8 @@ YTDLP_FORMATS = {"opus": "bestaudio[acodec=opus]/bestaudio", "m4a": "bestaudio[e
 RENAME_RETRY = 600
 UPSCALE_BITRATE = 192
 UPSCALE_CUTOFF = 16.5
+CLIPPING_PEAK = 1.0
+QUIET_LUFS = -24.0
 SPOTDL_LOAD_TIMEOUT = 1800
 SPOTDL_FOUND = re.compile(r"Found (\d+) songs? in (.+?)(?: \((?:Playlist|Album|Song)\))?\s*$")
 LOG_LEVELS = {"info": logging.INFO, "warn": logging.WARNING, "error": logging.ERROR}
@@ -530,6 +532,7 @@ class Engine:
         bitrate = analysis.bitrate_kbps(path)
         codec = analysis.codec_name(path)
         measured, cutoff = analysis.cutoff_khz(path, length)
+        level = analysis.loudness(path) or {}
         missing_tags = tags.missing(path) or []
         expected = float(tr["duration"])
         diff = length - expected
@@ -576,6 +579,10 @@ class Engine:
             and codec in ("MP3", "AAC")
         ):
             flag("WARN", "upscaled", kbps=bitrate, khz=cutoff)
+        if level.get("peak") is not None and level["peak"] >= CLIPPING_PEAK:
+            notes.append({"code": "clipping", "params": {"db": round(level["peak"], 1)}})
+        if level.get("lufs") is not None and level["lufs"] <= QUIET_LUFS:
+            notes.append({"code": "quiet", "params": {"lufs": round(level["lufs"], 1)}})
         if missing_tags:
             notes.append({"code": "tags_missing", "params": {"fields": missing_tags}})
         if gap is not None:
@@ -597,6 +604,9 @@ class Engine:
             "codec": codec,
             "cutoff": cutoff,
             "cutoff_measured": measured,
+            "lufs": None if level.get("lufs") is None else round(level["lufs"], 1),
+            "true_peak": None if level.get("peak") is None else round(level["peak"], 1),
+            "lra": None if level.get("lra") is None else round(level["lra"], 1),
             "tags_missing": missing_tags,
             "decode_errors": errors,
             "notes": notes,

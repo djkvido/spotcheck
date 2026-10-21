@@ -407,6 +407,31 @@ def head_gap(path: Path, lead: float, window: float = 30) -> float | None:
     return next((s for s in starts if max(1.0, lead + 1.0) <= s <= window - 5), None)
 
 
+def loudness(path: Path) -> dict[str, float | None] | None:
+    cmd = [ffmpeg(), "-hide_banner", "-nostats", "-i", str(path), "-map", "0:a:0"]
+    cmd += ["-af", "ebur128=peak=true:framelog=quiet", "-f", "null", "-"]
+    try:
+        r = run_text(cmd)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if "Summary:" not in r.stderr:
+        return None
+    summary = r.stderr.rsplit("Summary:", 1)[1]
+
+    def value(pattern: str) -> float | None:
+        m = re.search(pattern, summary, re.S)
+        return float(m.group(1)) if m and m.group(1) not in ("-inf", "inf", "nan") else None
+
+    integrated = value(r"I:\s+(-?[\d.]+|-inf) LUFS")
+    if integrated is None:
+        return None
+    return {
+        "lufs": integrated,
+        "lra": value(r"LRA:\s+(-?[\d.]+) LU"),
+        "peak": value(r"True peak:\s+Peak:\s+(-?[\d.]+|-inf) dBFS"),
+    }
+
+
 def raw_fingerprint(path: Path, offset: float = 0.0) -> tuple[int, ...]:
     cmd = [ffmpeg(), "-v", "error"]
     if offset > 0:

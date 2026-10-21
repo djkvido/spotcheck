@@ -167,3 +167,33 @@ def test_automation_updates_playlists_on_schedule(engine):
     pl["synced"] = time.time() - 25 * 3600
     assert engine.lib.due_for_sync(24) == ["A"]
     assert engine.lib.due_for_sync(0) == []
+
+
+def test_loud_peaks_and_quiet_files_are_reported_without_changing_the_verdict(engine, workspace, monkeypatch):
+    from spotcheck import analysis, tags
+
+    song = workspace.downloads / "x.mp3"
+    song.write_bytes(b"x")
+    monkeypatch.setattr(analysis, "decode_check", lambda path: (0, 200.0))
+    monkeypatch.setattr(analysis, "duration", lambda path: 200.0)
+    monkeypatch.setattr(analysis, "silence_edges", lambda path, length: (0.0, 0.0))
+    monkeypatch.setattr(analysis, "head_volume", lambda path: -12.0)
+    monkeypatch.setattr(analysis, "head_gap", lambda path, lead: None)
+    monkeypatch.setattr(analysis, "bitrate_kbps", lambda path: 320)
+    monkeypatch.setattr(analysis, "codec_name", lambda path: "MP3")
+    monkeypatch.setattr(analysis, "cutoff_khz", lambda path, length: (True, None))
+    monkeypatch.setattr(tags, "missing", lambda path: [])
+    tr = engine.lib.data["playlists"][0]["tracks"][0]
+
+    monkeypatch.setattr(analysis, "loudness", lambda path: {"lufs": -7.84, "lra": 4.0, "peak": 1.66})
+    check = engine.do_check(tr, song)
+    assert check["verdict"] == "OK"
+    assert (check["lufs"], check["true_peak"], check["lra"]) == (-7.8, 1.7, 4.0)
+    assert check["notes"] == [{"code": "clipping", "params": {"db": 1.7}}]
+
+    monkeypatch.setattr(analysis, "loudness", lambda path: {"lufs": -27.0, "lra": 9.0, "peak": -9.0})
+    assert engine.do_check(tr, song)["notes"] == [{"code": "quiet", "params": {"lufs": -27.0}}]
+
+    monkeypatch.setattr(analysis, "loudness", lambda path: None)
+    check = engine.do_check(tr, song)
+    assert check["notes"] == [] and check["lufs"] is None

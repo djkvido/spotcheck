@@ -95,3 +95,15 @@ def test_unreadable_files_have_no_tags(tmp_path):
     assert tags.cover(path) == b""
     with pytest.raises(ValueError):
         tags.write(path, {"title": "x"})
+
+
+@needs_ffmpeg
+def test_loudness_and_true_peak_are_measured(tmp_path):
+    loud = render(tmp_path / "loud.wav", "sine=frequency=997:sample_rate=44100,volume=24dB", 8, "-c:a", "pcm_f32le")
+    quiet = render(tmp_path / "quiet.wav", "sine=frequency=997:sample_rate=44100,volume=-30dB", 8)
+    silent = render(tmp_path / "silent.wav", "anullsrc=sample_rate=44100", 4)
+    level = analysis.loudness(loud)
+    assert level["peak"] > 1.0 and level["lufs"] > -10
+    assert analysis.loudness(quiet)["lufs"] < -30
+    silence = analysis.loudness(silent)
+    assert silence is None or silence["peak"] is None
