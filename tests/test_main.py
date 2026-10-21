@@ -10,3 +10,17 @@ def test_process_alive_tells_a_running_process_from_a_finished_one():
     child = subprocess.Popen([sys.executable, "-c", "pass"])
     child.wait()
     assert not process_alive(child.pid)
+
+
+def test_a_second_start_finds_spotcheck_on_the_port_it_moved_to(workspace, monkeypatch):
+    from spotcheck import __main__
+
+    listening = {8767}
+    monkeypatch.setattr(__main__, "running_instance", lambda host, port: port in listening)
+    assert __main__.active_port("127.0.0.1", 8765) is None
+    __main__.remember_instance(8767)
+    assert __main__.active_port("127.0.0.1", 8765) == 8767
+    listening.add(8765)
+    assert __main__.active_port("127.0.0.1", 8765) == 8765
+    __main__.forget_instance()
+    assert not __main__.instance_file().exists()

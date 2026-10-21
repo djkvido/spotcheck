@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import logging
 import os
@@ -12,7 +13,7 @@ import urllib.request
 import webbrowser
 from pathlib import Path
 
-from . import __version__, analysis, deps, diagnostics, runtime
+from . import __version__, analysis, config, deps, diagnostics, fileops, runtime
 from .config import configure
 
 LOOPBACK = ("127.0.0.1", "localhost", "::1")
@@ -62,6 +63,34 @@ def running_instance(host: str, port: int) -> bool:
             return "library" in json.loads(r.read().decode("utf-8"))
     except (OSError, ValueError):
         return False
+
+
+def instance_file() -> Path:
+    return config.paths().home / "instance.json"
+
+
+def active_port(host: str, preferred: int) -> int | None:
+    ports = [preferred]
+    try:
+        stored = json.loads(instance_file().read_text(encoding="utf-8")).get("port")
+    except (OSError, ValueError, AttributeError):
+        stored = None
+    if isinstance(stored, int) and stored != preferred:
+        ports.append(stored)
+    return next((port for port in ports if running_instance(host, port)), None)
+
+
+def remember_instance(port: int) -> None:
+    with contextlib.suppress(OSError):
+        fileops.write_json(instance_file(), {"pid": os.getpid(), "port": port})
+
+
+def forget_instance() -> None:
+    try:
+        if json.loads(instance_file().read_text(encoding="utf-8")).get("pid") == os.getpid():
+            instance_file().unlink()
+    except (OSError, ValueError, AttributeError):
+        pass
 
 
 def request_quit(host: str, port: int) -> int | None:
@@ -167,7 +196,7 @@ def headless(args: argparse.Namespace) -> int:
     from . import projects, report, terms
     from .library import Library
 
-    if running_instance(args.host, args.port):
+    if active_port(args.host, args.port) is not None:
         print("SpotCheck is running. Close it first, or use the app.", file=sys.stderr)
         return 1
     if not terms.accepted():
@@ -226,9 +255,6 @@ def main() -> None:
     parser.add_argument("--version", action="version", version=f"spotcheck {__version__}")
     args = parser.parse_args()
 
-    if args.quit:
-        raise SystemExit(0 if quit_running(args.host, args.port) else 1)
-
     if args.packaged:
         home = Path(args.home or runtime.user_home()).expanduser().resolve()
         runtime.prepare(True, home)
@@ -239,6 +265,9 @@ def main() -> None:
         logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
         configure(args.home)
     readable_output()
+    if args.quit:
+        running = active_port(args.host, args.port)
+        raise SystemExit(0 if running is None or quit_running(args.host, running) else 1)
     if args.diagnostics:
         print(diagnostics.report(network=args.network))
         raise SystemExit(0 if deps.status(check_updates=False)["ready"] else 1)
@@ -251,8 +280,9 @@ def main() -> None:
             logging.getLogger().setLevel(logging.WARNING)
         raise SystemExit(headless(args))
 
-    if running_instance(args.host, args.port):
-        url = f"http://{args.host}:{args.port}/"
+    running = active_port(args.host, args.port)
+    if running is not None:
+        url = f"http://{args.host}:{running}/"
         print(f"SpotCheck is already running at {url}")
         if not args.no_browser:
             webbrowser.open(url)
@@ -267,18 +297,18 @@ def main() -> None:
 
     url = f"http://{args.host}:{port}/"
     app = create_app()
-    config = uvicorn.Config(
-        app, host=args.host, port=port, log_level="warning", log_config=None, timeout_graceful_shutdown=2
-    )
-    server = uvicorn.Server(config)
+    settings = {"log_level": "warning", "log_config": None, "timeout_graceful_shutdown": 2}
+    server = uvicorn.Server(uvicorn.Config(app, host=args.host, port=port, **settings))
     logging.getLogger("spotcheck").info("Start of SpotCheck %s: %s", __version__, diagnostics.report())
     app.state.shutdown = lambda: setattr(server, "should_exit", True)
     if not args.no_browser:
         threading.Timer(1.2, webbrowser.open, args=(url,)).start()
     print(f"SpotCheck {__version__} is running at {url} (press Ctrl+C to stop)")
+    remember_instance(port)
     try:
         server.run()
     finally:
+        forget_instance()
         analysis.stop_all()
 
 
