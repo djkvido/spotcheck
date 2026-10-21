@@ -53,7 +53,11 @@ The tests do not need network access. `tests/test_audio_ffmpeg.py` and `tests/te
 | `origins.py` | playlist links from Spotify, YouTube, SoundCloud and Bandcamp; loading yt-dlp playlists and matching their tracks on Deezer |
 | `sources.py` | official previews (Deezer, iTunes) and candidates from YouTube Music, YouTube and SoundCloud |
 | `library.py` | playlists and tracks, persistence, matching files on disk |
-| `engine.py` | job queue, the per-track pipeline (download, check, verify, fix, trim), automatic maintenance, numbered names, playlist files, exports and tags |
+| `engine.py` | job queue, the per-track pipeline, loading playlists and songs, automatic maintenance |
+| `checks.py` | file checks, verification against the preview and the choice between candidates |
+| `acquire.py` | downloads with spotDL and yt-dlp, finding and applying better sources, trimming |
+| `files.py` | placing new files, backups and restoring them |
+| `organize.py` | numbered names, playlist files, exports and missing tags |
 | `report.py` | the report of `--check` and `--report` as text, JSON or CSV |
 | `deps.py` | dependency checks and installation |
 | `terms.py` | version of the Terms of Use and the user's consent |
