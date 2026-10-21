@@ -51,6 +51,7 @@ Checking a whole library by ear takes hours. SpotCheck leaves you only the track
 - **Verification against the official preview** from Deezer, with iTunes as a fallback. The preview is located inside your file by its [Chromaprint](https://acoustid.org/chromaprint) fingerprint, so you know whether it really is the same recording.
 - **File checks:** length compared with the official length (which gives away intros and outros), silence at the start and end, damaged or truncated audio and low bitrate.
 - **Real sound quality:** SpotCheck measures where each file's spectrum ends, which is where the encoder cut off the high frequencies, and flags low-quality sources and files whose bitrate was inflated from a worse source. Among candidates of the same recording, the better sounding one wins.
+- **Loudness and true peak** according to EBU R128 for every file, so tracks that may distort on playback or are far quieter than the rest stand out.
 
 **Fix safely**
 
@@ -70,7 +71,7 @@ Checking a whole library by ear takes hours. SpotCheck leaves you only the track
 - **Playlist overview and filters:** cover previews and health per playlist, filters by status and by finding (silence, intro, different length…), search across titles, artists, albums and files.
 - **Every action explains itself:** buttons show how many tracks they would touch, ask before changing files and report what happened. Settings are validated as you type.
 - **Tuning** of every threshold, search template and source, with defaults that work for most libraries.
-- **CSV export** of the current view.
+- **CSV export** of the current view, and **reports from the command line** for scheduled checks without opening the app.
 - **English and Czech UI**, picked from your browser language and switchable in the top bar.
 
 ![Track details: findings such as a low-quality source, your file and the official preview side by side](docs/screenshot-detail.png)
@@ -88,7 +89,7 @@ Everything SpotCheck needs is included (Python, FFmpeg with Chromaprint, Deno), 
 
 The installers are not yet signed with a code-signing certificate. On Windows, SmartScreen may show *Windows protected your PC*: choose **More info › Run anyway**. On macOS, the first start is blocked: open **System Settings › Privacy & Security** and choose **Open Anyway** next to SpotCheck.
 
-Every release lists the SHA-256 hash of each file and carries a signed [build provenance attestation](SECURITY.md#how-the-releases-are-built) proving that it was built by GitHub Actions from this repository.
+What changed in each version is listed in the [changelog](CHANGELOG.md). Every release lists the SHA-256 hash of each file and carries a signed [build provenance attestation](SECURITY.md#how-the-releases-are-built) proving that it was built by GitHub Actions from this repository.
 
 SpotCheck opens in your browser at `http://127.0.0.1:8765/` and only accepts connections from your own computer. Starting it again while it runs only brings it up; the power button in the top bar stops it. The installer and the first start ask you to agree to the [Terms of Use](TERMS.md).
 
@@ -124,7 +125,17 @@ When you run SpotCheck from source, the first project uses `downloads/` for musi
 spotcheck --home ~/Music/spotcheck
 ```
 
-Run `spotcheck --help` for the other options (`--host`, `--port`, `--no-browser`).
+Run `spotcheck --help` for the other options (`--port`, `--no-browser`, `--diagnostics`).
+
+### Checks from the command line
+
+The library can also be checked without opening the app, for example from a scheduled task. SpotCheck must not be running at the same time, and the terms of use must have been accepted in the app once.
+
+```bash
+spotcheck --check
+```
+
+checks and verifies new and changed files of the current project and prints a report; `--check all` checks every file. `spotcheck --report` only prints the report, as text, `json` or `csv`. The exit code is 0 when everything is fine, 2 when a file is wrong or needs review, and 1 when something could not be done.
 
 ## Usage
 

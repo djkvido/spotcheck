@@ -20,11 +20,12 @@ python -m spotcheck --home ../spotcheck-data
 
 ## Checks
 
-CI runs the same checks on Linux and Windows:
+CI runs these checks on Linux, Windows and macOS, together with an audit of the dependencies for known vulnerabilities:
 
 ```bash
 python -m ruff check .
 python -m ruff format --check .
+for f in spotcheck/static/*.js; do node --check "$f"; done
 python -m pytest
 ```
 
@@ -53,6 +54,7 @@ The tests do not need network access. `tests/test_audio_ffmpeg.py` and `tests/te
 | `sources.py` | official previews (Deezer, iTunes) and candidates from YouTube Music, YouTube and SoundCloud |
 | `library.py` | playlists and tracks, persistence, matching files on disk |
 | `engine.py` | job queue, the per-track pipeline (download, check, verify, fix, trim), automatic maintenance, numbered names, playlist files, exports and tags |
+| `report.py` | the report of `--check` and `--report` as text, JSON or CSV |
 | `deps.py` | dependency checks and installation |
 | `terms.py` | version of the Terms of Use and the user's consent |
 | `server.py` | HTTP API, Server-Sent Events, static UI |
@@ -68,9 +70,12 @@ The tests do not need network access. `tests/test_audio_ffmpeg.py` and `tests/te
 
 ## Releases
 
-1. Open **Actions › Prepare release › Run workflow** on GitHub and enter the new version, for example `1.0.3`. The workflow checks that it is newer than the current one, updates `__version__` in `spotcheck/__init__.py`, commits, tags `v1.0.3` and starts the build. Without GitHub Actions the same is done by hand: change `__version__`, commit, tag with the same version and push the tag.
-2. The [Release workflow](.github/workflows/release.yml) builds FFmpeg from source, the Windows installer and the macOS app, installs and checks both, and creates a draft release with the installers, the source code, `SHA256SUMS.txt` and build provenance attestations. It refuses a tag that differs from `__version__`.
-3. Review the draft on GitHub, add what is new to its text and publish it in one step.
+1. Every change that users notice is described under **Unreleased** in [`CHANGELOG.md`](CHANGELOG.md) in the same pull request.
+2. Open **Actions › Prepare release › Run workflow** on GitHub and enter the new version, for example `1.2.0`. The workflow checks that it is newer than the current one, turns the Unreleased section into the entry of the new version, updates `__version__` in `spotcheck/__init__.py`, commits, tags `v1.2.0` and starts the build. It stops when the Unreleased section is empty.
+3. The [Release workflow](.github/workflows/release.yml) checks that the tag matches `__version__` and runs all tests, then builds FFmpeg from source, the Windows installer and the macOS app, installs and checks both, and creates a draft release with the installers, the source code, `SHA256SUMS.txt` and build provenance attestations. The text of the draft is the changelog entry followed by the download instructions.
+4. Review the draft on GitHub and publish it.
+
+Without GitHub Actions the same is done by hand: run `python packaging/changelog.py release <version> <date>`, change `__version__`, commit, tag with the same version and push the tag.
 
 Dependencies of the installers are locked with hashes in `packaging/requirements-*.lock`. After changing the dependencies in `pyproject.toml`, regenerate the locks with only releases that are at least two weeks old:
 

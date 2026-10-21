@@ -15,9 +15,32 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  version:
+    name: Version
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
+      - name: Check the version and the changelog
+        run: |
+          version="$(python3 -c "import re; print(re.search(r'__version__ = \"([^\"]+)\"', open('spotcheck/__init__.py').read()).group(1))")"
+          test "v$version" = "$GITHUB_REF_NAME"
+          python3 packaging/changelog.py notes "$version" > /dev/null
+
+  tests:
+    name: Tests
+    if: startsWith(github.ref, 'refs/tags/v')
+    uses: ./.github/workflows/ci.yml
+
   ffmpeg:
     name: FFmpeg for ${{ matrix.target }}
+    needs: [version, tests]
+    if: ${{ !failure() && !cancelled() }}
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
@@ -53,7 +76,9 @@ jobs:
   windows:
     name: Windows installer
     needs: ffmpeg
+    if: ${{ !failure() && !cancelled() }}
     runs-on: windows-2025
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
@@ -98,7 +123,9 @@ jobs:
   macos:
     name: macOS app
     needs: ffmpeg
+    if: ${{ !failure() && !cancelled() }}
     runs-on: macos-15
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
@@ -134,6 +161,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [windows, macos]
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     permissions:
       contents: write
       id-token: write
@@ -142,10 +170,6 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           persist-credentials: false
-      - name: Check the version
-        run: |
-          version="$(python3 -c "import re; print(re.search(r'__version__ = \"([^\"]+)\"', open('spotcheck/__init__.py').read()).group(1))")"
-          test "v$version" = "$GITHUB_REF_NAME"
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           path: artifacts
@@ -157,12 +181,20 @@ jobs:
           git archive --format=tar.gz --prefix="spotcheck-$version/" -o "release/spotcheck-$version-source.tar.gz" HEAD
           tar -czf "release/spotcheck-$version-ffmpeg-sources.tar.gz" -C artifacts/ffmpeg-windows sources
           (cd release && sha256sum * > SHA256SUMS.txt)
-      - uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8
         with:
           subject-path: release/*
-      - name: Create the draft release
+      - name: Write the release notes
+        run: |
+          { python3 packaging/changelog.py notes "${GITHUB_REF_NAME#v}"; echo; cat packaging/release-notes.md; } > notes.md
+      - name: Create or update the draft release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" release/* --draft --verify-tag \
-            --title "SpotCheck ${GITHUB_REF_NAME#v}" --notes-file packaging/release-notes.md
+          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" release/* --clobber
+            gh release edit "$GITHUB_REF_NAME" --notes-file notes.md
+          else
+            gh release create "$GITHUB_REF_NAME" release/* --draft --verify-tag \
+              --title "SpotCheck ${GITHUB_REF_NAME#v}" --notes-file notes.md
+          fi

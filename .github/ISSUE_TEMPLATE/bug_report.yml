@@ -1,0 +1,45 @@
+name: Bug report
+description: Something does not work as described.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for taking the time to report a problem. Please check [Troubleshooting](https://github.com/djkvido/spotcheck#troubleshooting) first; many common situations are explained there.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Shown in Settings › About.
+      placeholder: "1.1.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: system
+    attributes:
+      label: System
+      options:
+        - Windows installer
+        - macOS app
+        - Run from source
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What did you do, what did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: |
+        Settings › About › Diagnostics › Copy, or `spotcheck --diagnostics`. The report hides your user name and home folder; please read it before posting.
+      render: text
+  - type: textarea
+    id: links
+    attributes:
+      label: Links
+      description: If a playlist or song cannot be loaded, the public link that fails. Do not post private playlists.

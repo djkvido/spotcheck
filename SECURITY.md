@@ -22,9 +22,9 @@ Include what you found, how to reproduce it and which version and operating syst
 
 - Installers are built by [GitHub Actions](.github/workflows/release.yml) from the tagged source code. Every action is pinned to a full commit hash.
 - Python packages are installed from lock files with SHA-256 hashes ([`packaging/`](packaging)). Only versions published at least two weeks before the lock was created are used, and the locks are audited for known vulnerabilities on every change.
-- Python, Deno and the FFmpeg sources are downloaded from their official releases and checked against the SHA-256 hashes in [`packaging/versions.json`](packaging/versions.json). The FFmpeg source release is additionally signed by the FFmpeg developers.
+- Python, Deno and the FFmpeg sources are downloaded from their official releases and checked against the SHA-256 hashes in [`packaging/versions.json`](packaging/versions.json).
 - Every release lists the SHA-256 hash of each file in `SHA256SUMS.txt` and carries a signed build provenance attestation. To verify a download with the [GitHub CLI](https://cli.github.com):
 
   ```bash
-  gh attestation verify SpotCheck-1.0.2-windows-x64-setup.exe --repo djkvido/spotcheck
+  gh attestation verify SpotCheck-<version>-windows-x64-setup.exe --repo djkvido/spotcheck
   ```

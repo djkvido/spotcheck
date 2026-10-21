@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Troubleshooting
+    url: https://github.com/djkvido/spotcheck#troubleshooting
+    about: Answers to the most common problems.
+  - name: Security issue
+    url: https://github.com/djkvido/spotcheck/security/policy
+    about: Please report security issues privately as described in the security policy.

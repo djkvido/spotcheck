@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "spotcheck"
 dynamic = ["version"]
-description = "Download tracks of Spotify, YouTube, SoundCloud and Bandcamp playlists and verify them by audio fingerprint and real sound quality."
+description = "Check that every file of a local music library is the right recording, by audio fingerprint against the official preview, real sound quality and loudness, with safe replacements."
 readme = "README.md"
 license = "GPL-3.0-or-later"
 license-files = ["LICENSE"]
@@ -56,7 +56,7 @@ Repository = "https://github.com/djkvido/spotcheck"
 Issues = "https://github.com/djkvido/spotcheck/issues"
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "ruff>=0.6", "httpx2>=2.13", "pip-audit>=2.7"]
+dev = ["pytest>=8", "ruff>=0.17,<0.18", "httpx2>=2.13", "pip-audit>=2.7"]
 
 [project.scripts]
 spotcheck = "spotcheck.__main__:main"
