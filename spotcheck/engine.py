@@ -19,7 +19,16 @@ from typing import Any
 
 from . import analysis, deps, diagnostics, fileops, origins, sources, tags, terms
 from .config import paths
-from .library import AUDIO_SUFFIXES, SINGLES_ID, Library, base_name, compute_status, folder_name, track_key
+from .library import (
+    AUDIO_SUFFIXES,
+    SINGLES_ID,
+    Library,
+    base_name,
+    compute_status,
+    folder_name,
+    playlist_id,
+    track_key,
+)
 
 log = logging.getLogger(__name__)
 
@@ -34,6 +43,7 @@ SPOTDL_LOAD_TIMEOUT = 1800
 SPOTDL_FOUND = re.compile(r"Found (\d+) songs? in (.+?)(?: \((?:Playlist|Album|Song)\))?\s*$")
 LOG_LEVELS = {"info": logging.INFO, "warn": logging.WARNING, "error": logging.ERROR}
 INTERRUPTIBLE = ("process", "sync")
+JOB_HISTORY = 100
 
 
 class Cancelled(Exception):
@@ -80,6 +90,7 @@ class Engine:
         self._next_scan = 0.0
         self._automation = threading.Event()
         self._rename_blocked: dict[str, float] = {}
+        self._m3u_blocked: dict[str, float] = {}
         threading.Thread(target=self._worker, daemon=True, name="spotcheck-worker").start()
 
     def start_automation(self) -> None:
@@ -180,6 +191,10 @@ class Engine:
         with self.lock:
             self.jobs[job["id"]] = job
             self.order.append(job["id"])
+            for old in self.order[:-JOB_HISTORY]:
+                if self.jobs[old]["state"] in ("done", "failed", "cancelled"):
+                    del self.jobs[old]
+            self.order = [i for i in self.order if i in self.jobs]
         self.queue.put(job["id"])
         self._emit_job(job)
         return job["id"]
@@ -1014,68 +1029,42 @@ class Engine:
         playlist_ids: list[str] | None = None,
         follow_up: bool = False,
     ) -> None:
-        targets = list(urls or [])
+        targets: list[tuple[str, str | None]] = [(url, None) for url in urls or []]
         for pid in playlist_ids or []:
             pl = self.lib.playlist(pid)
             if pl and pl.get("origin") != SINGLES_ID:
-                targets.append(pl["url"])
+                targets.append((pl["url"], pid))
         job["total"] = len(targets)
-        loaded, added, removed, failed = 0, 0, 0, 0
+        totals = {"playlists": 0, "added": 0, "removed": 0, "failed": 0}
         synced: list[str] = []
-        for url in targets:
+        for url, pid in targets:
             self._check_cancel(job)
             job["current"] = url
             self._emit_job(job)
             self.bus.log("info", "playlist_loading", url=url)
-            if origins.classify_track(url):
-                songs = self.load_track(url)
-                if not songs:
-                    failed += 1
-                    self.bus.log("error", "track_failed", url=url)
-                else:
-                    change = self.lib.add_singles(songs)
-                    self.lib.link_files()
-                    if change["playlist"]["id"] not in synced:
-                        synced.append(change["playlist"]["id"])
-                    loaded += 1
-                    added += len(change["added"])
-                    label = f"{songs[0]['artist']} - {songs[0]['name']}"
-                    self.bus.log("info", "track_added" if change["added"] else "track_known", name=label)
-                    self.bus.emit({"type": "library"})
-                job["done"] += 1
-                self._emit_job(job)
-                continue
-            name, songs = self.load_playlist(url)
-            if not songs:
-                failed += 1
-                self.bus.log("error", "playlist_failed", url=url)
+            single = bool(origins.classify_track(url))
+            try:
+                result = self.sync_single(url) if single else self.sync_playlist(url)
+            except Cancelled:
+                raise
+            except Exception as exc:
+                log.exception("Loading %s failed", url)
+                self.bus.log("error", "sync_error", url=url, error=str(exc))
+                result = None
+            if not single:
+                self.lib.note_sync(pid or playlist_id(url), ok=result is not None)
+            if result is None:
+                totals["failed"] += 1
             else:
-                change = self.lib.upsert_playlist(url, name, songs)
-                self.lib.link_files()
-                pl = change["playlist"]
-                synced.append(pl["id"])
-                loaded += 1
-                added += 0 if change["new"] else len(change["added"])
-                removed += len(change["removed"])
-                if change["new"]:
-                    self.bus.log("info", "playlist_loaded", name=name, count=len(pl["tracks"]))
-                else:
-                    if change["old_name"] != name:
-                        self.bus.log("info", "playlist_renamed", old=change["old_name"], name=name)
-                    kept = sum(1 for t in change["removed"] if t.get("file"))
-                    if change["added"] or change["removed"]:
-                        self.bus.log(
-                            "info",
-                            "playlist_updated",
-                            name=name,
-                            added=len(change["added"]),
-                            removed=len(change["removed"]),
-                            kept=kept,
-                        )
+                totals["playlists"] += 1
+                totals["added"] += result["added"]
+                totals["removed"] += result["removed"]
+                if result["id"] not in synced:
+                    synced.append(result["id"])
                 self.bus.emit({"type": "library"})
             job["done"] += 1
             self._emit_job(job)
-        job["summary"] = {"playlists": loaded, "added": added, "removed": removed, "failed": failed}
+        job["summary"] = totals
         self.organize(set(synced))
         if follow_up and synced:
             missing = self.select(only="missing", playlist_ids=synced)
@@ -1088,6 +1077,40 @@ class Engine:
                     only="missing",
                     flags=dict(FULL_PROCESS),
                 )
+
+    def sync_single(self, url: str) -> dict | None:
+        songs = self.load_track(url)
+        if not songs:
+            self.bus.log("error", "single_failed", url=url)
+            return None
+        change = self.lib.add_singles(songs)
+        self.lib.link_files()
+        label = f"{songs[0]['artist']} - {songs[0]['name']}"
+        self.bus.log("info", "track_added" if change["added"] else "track_known", name=label)
+        return {"id": change["playlist"]["id"], "added": len(change["added"]), "removed": 0}
+
+    def sync_playlist(self, url: str) -> dict | None:
+        name, songs = self.load_playlist(url)
+        if not songs:
+            self.bus.log("error", "playlist_failed", url=url)
+            return None
+        change = self.lib.upsert_playlist(url, name, songs)
+        self.lib.link_files()
+        pl = change["playlist"]
+        if change["new"]:
+            self.bus.log("info", "playlist_loaded", name=name, count=len(pl["tracks"]))
+        else:
+            if change["old_name"] != name:
+                self.bus.log("info", "playlist_renamed", old=change["old_name"], name=name)
+            if change["added"] or change["removed"]:
+                kept = sum(1 for t in change["removed"] if t.get("file"))
+                added, removed = len(change["added"]), len(change["removed"])
+                self.bus.log("info", "playlist_updated", name=name, added=added, removed=removed, kept=kept)
+        return {
+            "id": pl["id"],
+            "added": 0 if change["new"] else len(change["added"]),
+            "removed": len(change["removed"]),
+        }
 
     def load_track(self, url: str) -> list[dict]:
         if (origins.classify_track(url) or ("",))[0] == "spotify":
@@ -1136,8 +1159,13 @@ class Engine:
             self.bus.log("warn", "spotdl_error", error=str(exc))
         songs: list[dict] = []
         if out.exists():
-            songs = json.loads(out.read_text(encoding="utf-8"))
-            out.unlink(missing_ok=True)
+            try:
+                loaded = json.loads(out.read_text(encoding="utf-8"))
+                songs = [s for s in loaded if isinstance(s, dict) and s.get("url")] if isinstance(loaded, list) else []
+            except (OSError, ValueError) as exc:
+                self.bus.log("warn", "spotdl_error", error=str(exc))
+            finally:
+                out.unlink(missing_ok=True)
         return (songs[0].get("list_name") or "Playlist") if songs else "Playlist", songs
 
     def planned_names(self, pl: dict) -> list[tuple[dict, Path, Path, bool]]:
@@ -1193,7 +1221,9 @@ class Engine:
             for pl in self.lib.data["playlists"]:
                 moves = self.planned_names(pl)
                 due = [m for m in moves if now - self._rename_blocked.get(str(m[1]), 0) > RENAME_RETRY]
-                if due or self.playlist_file_due(pl):
+                if due:
+                    return True
+                if now - self._m3u_blocked.get(pl["id"], 0) > RENAME_RETRY and self.playlist_file_due(pl):
                     return True
         return False
 
@@ -1205,6 +1235,7 @@ class Engine:
         for tr, src, dst, numbered in moves:
             taken = dst.exists() and str(dst).lower() not in moving and not src.samefile(dst)
             if taken:
+                self._rename_blocked[str(src)] = time.time()
                 self.bus.log("warn", "rename_conflict", tr["id"], file=dst.name)
                 continue
             tmp = src.with_name(f"{dst.stem}.renaming-{uuid.uuid4().hex[:6]}{src.suffix}")
@@ -1262,6 +1293,7 @@ class Engine:
             try:
                 written += self.write_playlist_file(pl)
             except OSError as exc:
+                self._m3u_blocked[pl["id"]] = time.time()
                 self.bus.log("warn", "playlist_file_failed", name=pl["name"], error=str(exc))
         if renamed:
             self.bus.log("info", "renamed", count=renamed)

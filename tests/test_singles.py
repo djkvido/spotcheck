@@ -124,7 +124,7 @@ def test_a_song_that_cannot_be_loaded_is_reported(engine, monkeypatch):
     engine._job_sync(job, urls=["https://www.youtube.com/watch?v=Y79K-XyMOA0"])
     assert job["summary"]["failed"] == 1
     assert engine.lib.playlist(SINGLES_ID) is None
-    assert any(e["code"] == "track_failed" for e in engine.bus.logs)
+    assert any(e["code"] == "single_failed" for e in engine.bus.logs)
 
 
 def test_refreshing_everything_skips_the_singles_list(engine, monkeypatch):

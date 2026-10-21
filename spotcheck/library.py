@@ -40,6 +40,7 @@ TRACK_DEFAULTS: dict[str, Any] = {
 
 
 SINGLES_ID = "singles"
+SYNC_RETRY = 900
 
 
 def playlist_id(url: str) -> str:
@@ -173,6 +174,16 @@ class Library:
                 return d
         return exact
 
+    def _new_folder(self, name: str) -> str:
+        used = {p["folder"].casefold() for p in self.data["playlists"] if p.get("folder")}
+        folder = self._existing_folder(name).name
+        if folder.casefold() not in used:
+            return folder
+        base, n = folder_name(name), 2
+        while f"{base} ({n})".casefold() in used or (paths().downloads / f"{base} ({n})").exists():
+            n += 1
+        return f"{base} ({n})"
+
     @staticmethod
     def folder(pl: dict) -> Path:
         return paths().downloads / pl["folder"]
@@ -217,7 +228,7 @@ class Library:
                     seen.add(track["id"])
                     tracks.append(track)
             if pl is None:
-                folder = self._existing_folder(name).name
+                folder = self._new_folder(name)
                 pl = {
                     "id": pid,
                     "url": url,
@@ -252,7 +263,7 @@ class Library:
                     "url": SINGLES_ID,
                     "origin": SINGLES_ID,
                     "name": origins.SINGLES_NAME,
-                    "folder": self._existing_folder(origins.SINGLES_NAME).name,
+                    "folder": self._new_folder(origins.SINGLES_NAME),
                     "tracks": [],
                     "added": time.time(),
                 }
@@ -287,25 +298,34 @@ class Library:
             self.data["playlists"] = [p for p in self.data["playlists"] if p["id"] != pid]
             self.save()
 
-    def find_file(self, pl: dict, tr: dict, exclude: set[str] | None = None) -> Path | None:
+    def folder_index(self, pl: dict) -> list[tuple[Path, str, str, str]]:
         folder = self.folder(pl)
         if not folder.is_dir():
-            return None
-        exclude = exclude or set()
+            return []
         downloads = paths().downloads
-        files = [
-            p
+        return [
+            (p, p.relative_to(downloads).as_posix(), norm(p.stem), norm(NUMBER_PREFIX.sub("", p.stem, count=1)))
             for p in folder.iterdir()
-            if p.suffix.lower() in AUDIO_SUFFIXES
-            and not fileops.is_temp(p)
-            and p.relative_to(downloads).as_posix() not in exclude
+            if p.suffix.lower() in AUDIO_SUFFIXES and not fileops.is_temp(p)
         ]
+
+    def find_file(
+        self,
+        pl: dict,
+        tr: dict,
+        exclude: set[str] | None = None,
+        index: list[tuple[Path, str, str, str]] | None = None,
+    ) -> Path | None:
+        exclude = exclude or set()
         title, artist = norm(tr["name"]), norm(tr["artist"])
         full = norm(", ".join(tr["artists"]) + " - " + tr["name"])
+        if not full:
+            return None
         scored = []
-        for f in files:
-            name = norm(f.stem)
-            score = max(fuzz.ratio(full, name), fuzz.ratio(full, norm(NUMBER_PREFIX.sub("", f.stem, count=1))))
+        for f, relative, name, bare in self.folder_index(pl) if index is None else index:
+            if relative in exclude or not name:
+                continue
+            score = max(fuzz.ratio(full, name), fuzz.ratio(full, bare))
             if title and artist and title in name and artist in name:
                 score = max(score, 100)
             if score >= 85:
@@ -318,9 +338,20 @@ class Library:
             return ties[0]
         return min(ties, key=lambda f: abs(analysis.duration(f) - tr["duration"]))
 
-    def link_files(self) -> None:
+    def music_available(self) -> bool:
+        downloads = paths().downloads
+        linked = any(tr.get("file") for pl in self.data["playlists"] for tr in pl["tracks"])
+        try:
+            return downloads.is_dir() and (not linked or any(downloads.iterdir()))
+        except OSError:
+            return False
+
+    def link_files(self) -> bool:
         downloads = paths().downloads
         with self.lock:
+            if not self.music_available():
+                log.warning("Music folder %s is not available; files stay linked", downloads)
+                return False
             for pl in self.data["playlists"]:
                 taken: set[str] = set()
                 for tr in pl["tracks"]:
@@ -328,9 +359,10 @@ class Library:
                         taken.add(tr["file"])
                     else:
                         tr["file"] = None
+                index = self.folder_index(pl) if any(tr["file"] is None for tr in pl["tracks"]) else []
                 for tr in pl["tracks"]:
                     if tr["file"] is None:
-                        found = self.find_file(pl, tr, exclude=taken)
+                        found = self.find_file(pl, tr, exclude=taken, index=index)
                         if found is not None:
                             tr["file"] = found.relative_to(downloads).as_posix()
                             taken.add(tr["file"])
@@ -341,6 +373,7 @@ class Library:
                             tr["source"] = {**source, "via": via}
                     tr["status"] = compute_status(tr)
             self.save()
+        return True
 
     @staticmethod
     def signature(path: Path) -> list[int]:
@@ -368,13 +401,31 @@ class Library:
     def due_for_sync(self, hours: float) -> list[str]:
         if hours <= 0:
             return []
-        limit = time.time() - hours * 3600
+        now = time.time()
+        due = []
         with self.lock:
-            return [
-                p["id"]
-                for p in self.data["playlists"]
-                if p.get("origin") != SINGLES_ID and (p.get("synced") or p.get("added") or 0) < limit
-            ]
+            for p in self.data["playlists"]:
+                if p.get("origin") == SINGLES_ID:
+                    continue
+                failed = p.get("sync_failed")
+                if failed:
+                    wait = min(hours * 3600, SYNC_RETRY * 2 ** (failed["count"] - 1))
+                    if now >= failed["t"] + wait:
+                        due.append(p["id"])
+                elif (p.get("synced") or p.get("added") or 0) < now - hours * 3600:
+                    due.append(p["id"])
+        return due
+
+    def note_sync(self, pid: str | None, ok: bool) -> None:
+        with self.lock:
+            pl = self.playlist(pid) if pid else None
+            if pl is None:
+                return
+            if ok:
+                pl.pop("sync_failed", None)
+            else:
+                count = (pl.get("sync_failed") or {}).get("count", 0) + 1
+                pl["sync_failed"] = {"t": time.time(), "count": count}
 
     def public(self) -> dict[str, Any]:
         with self.lock:

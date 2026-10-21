@@ -38,8 +38,9 @@ _ytmusic = None
 
 
 def norm(text: str) -> str:
-    text = unicodedata.normalize("NFKD", text or "").encode("ascii", "ignore").decode().lower()
-    return re.sub(r"[^a-z0-9]+", " ", text).strip()
+    text = unicodedata.normalize("NFKD", text or "")
+    text = "".join(c for c in text if not unicodedata.combining(c)).casefold()
+    return re.sub(r"[\W_]+", " ", text).strip()
 
 
 def clean_title(name: str) -> str:
