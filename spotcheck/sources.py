@@ -16,7 +16,7 @@ from typing import Any
 import yt_dlp
 from rapidfuzz import fuzz
 
-from . import __version__, analysis
+from . import __version__, analysis, fileops
 from .config import paths
 
 USER_AGENT = {"User-Agent": f"SpotCheck/{__version__}"}
@@ -185,7 +185,7 @@ def _store_index_entry(track_id: str, entry: dict) -> None:
     with _index_lock:
         index = _load_index()
         index[track_id] = entry
-        _index_path().write_text(json.dumps(index, ensure_ascii=False, indent=1), encoding="utf-8")
+        fileops.write_json(_index_path(), index)
 
 
 def get_preview(song: dict, st: dict, force: bool = False) -> dict | None:

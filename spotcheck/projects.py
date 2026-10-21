@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 import shutil
 import threading
@@ -10,6 +9,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from . import fileops
 from .config import first_project_music, paths, use_project
 
 NAME_MAX = 60
@@ -29,9 +29,16 @@ def _file() -> Path:
 
 
 def _save(registry: dict[str, Any]) -> None:
-    tmp = _file().with_suffix(".tmp")
-    tmp.write_text(json.dumps(registry, ensure_ascii=False, indent=1), encoding="utf-8")
-    os.replace(tmp, _file())
+    fileops.write_json(_file(), registry, keep_previous=True)
+
+
+def _valid(registry: Any) -> bool:
+    return (
+        isinstance(registry, dict)
+        and isinstance(registry.get("projects"), list)
+        and bool(registry["projects"])
+        and all(isinstance(p, dict) and {"id", "name", "music", "data"} <= p.keys() for p in registry["projects"])
+    )
 
 
 def _move_legacy_caches(home: Path) -> None:
@@ -47,8 +54,13 @@ def _move_legacy_caches(home: Path) -> None:
 def load() -> dict[str, Any]:
     with _lock:
         file = _file()
-        if file.exists():
-            return json.loads(file.read_text(encoding="utf-8"))
+        registry, used = fileops.read_json(file, _valid)
+        if used != file and file.exists():
+            fileops.quarantine(file)
+        if registry is not None:
+            if used != file:
+                _save(registry)
+            return registry
         home = paths().home
         _move_legacy_caches(home)
         project = {

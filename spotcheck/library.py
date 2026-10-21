@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import copy
-import json
 import logging
-import os
 import re
 import threading
 import time
@@ -62,6 +60,19 @@ def track_key(pl: dict, tr: dict) -> str:
     return f"{pl['id']}:{tr['id']}"
 
 
+def valid_library(data: Any) -> bool:
+    if not isinstance(data, dict) or not isinstance(data.get("settings", {}), dict):
+        return False
+    playlists = data.get("playlists", [])
+    return isinstance(playlists, list) and all(
+        isinstance(p, dict)
+        and isinstance(p.get("id"), str)
+        and isinstance(p.get("tracks"), list)
+        and all(isinstance(t, dict) and "id" in t for t in p["tracks"])
+        for p in playlists
+    )
+
+
 def compute_status(tr: dict) -> str:
     if not tr.get("file"):
         return "missing"
@@ -90,15 +101,14 @@ class Library:
 
     def _load(self) -> None:
         file = paths().library_file
-        if not file.exists():
+        loaded, used = fileops.read_json(file, valid_library)
+        if used != file and file.exists():
+            kept = fileops.quarantine(file)
+            log.error("Library file could not be read; a copy was kept as %s", kept.name if kept else "-")
+        if loaded is None:
             return
-        try:
-            loaded = json.loads(file.read_text(encoding="utf-8"))
-        except (OSError, ValueError) as exc:
-            backup = file.with_name(f"library.corrupt-{int(time.time())}.json")
-            file.replace(backup)
-            log.error("Library file could not be read (%s); moved to %s", exc, backup.name)
-            return
+        if used != file:
+            log.warning("Library restored from %s", used.name)
         self.data["settings"] = settings_mod.merge(settings_mod.defaults(), loaded.get("settings", {}))
         self.data["playlists"] = loaded.get("playlists", [])
         for pl in self.data["playlists"]:
@@ -111,10 +121,14 @@ class Library:
 
     def save(self) -> None:
         with self.lock:
-            file = paths().library_file
-            tmp = file.with_suffix(".tmp")
-            tmp.write_text(json.dumps(self.data, ensure_ascii=False, indent=1), encoding="utf-8")
-            os.replace(tmp, file)
+            for attempt in range(5):
+                try:
+                    fileops.write_json(paths().library_file, self.data, keep_previous=True)
+                    break
+                except RuntimeError:
+                    if attempt == 4:
+                        raise
+                    time.sleep(0.05)
             self.saved_at = time.time()
         if self.on_save:
             self.on_save()

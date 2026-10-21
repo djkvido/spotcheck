@@ -75,6 +75,7 @@ class Engine:
         self.lock = threading.RLock()
         self._preview_fps: dict[tuple[str, float], tuple[int, ...]] = {}
         self._preview_lock = threading.Lock()
+        self._place_lock = threading.Lock()
         self._clean_workspace()
         self._next_scan = 0.0
         self._automation = threading.Event()
@@ -382,6 +383,24 @@ class Engine:
             n += 1
         return candidate
 
+    def reserve(self, target: Path) -> Path:
+        with self._place_lock:
+            while True:
+                candidate = self.free_path(target)
+                try:
+                    candidate.open("xb").close()
+                except FileExistsError:
+                    continue
+                return candidate
+
+    @staticmethod
+    def release(reserved: Path) -> None:
+        try:
+            if reserved.stat().st_size == 0:
+                reserved.unlink()
+        except OSError:
+            pass
+
     def remove_replaced(self, tr: dict, old: Path, new: Path) -> None:
         if old == new:
             return
@@ -393,9 +412,14 @@ class Engine:
     def place_new(self, pl: dict, tmp: Path) -> Path:
         folder = self.lib.folder(pl)
         folder.mkdir(parents=True, exist_ok=True)
-        target = self.free_path(folder / tmp.name)
-        shutil.move(str(tmp), str(target))
-        shutil.rmtree(tmp.parent, ignore_errors=True)
+        target = self.reserve(folder / tmp.name)
+        try:
+            fileops.install(tmp, target)
+        except OSError:
+            self.release(target)
+            raise
+        finally:
+            shutil.rmtree(tmp.parent, ignore_errors=True)
         return target
 
     @staticmethod
@@ -721,11 +745,13 @@ class Engine:
         entry = self.backup(tr, path, "replace")
         target = path.with_suffix(tmp.suffix.lower())
         if target != path:
-            target = self.free_path(target)
+            target = self.reserve(target)
         try:
             self.place_over(tmp, target)
         except OSError:
             self.drop_backup(tr, entry)
+            if target != path:
+                self.release(target)
             raise
         self.remove_replaced(tr, path, target)
         self.prune_backups(tr)
@@ -734,6 +760,7 @@ class Engine:
         self.set_file(tr, target, "candidate")
         tr["proposal"], tr["trimmed"] = None, None
         self.check_and_verify(pl, tr, target)
+        self.lib.save()
         self.bus.log("info", "replaced", tr["id"], url=cand["url"])
         return target
 
@@ -780,6 +807,8 @@ class Engine:
         done = tr.get("trimmed") or {"start": 0, "end": 0}
         tr["trimmed"] = {"start": round(done["start"] + start, 1), "end": round(done["end"] + length - end, 1)}
         self.check_and_verify(pl, tr, path)
+        if entry is not None:
+            self.lib.save()
         self.bus.log("info", "trimmed", tr["id"], start=round(start, 1), end=round(length - end, 1))
 
     def process_track(self, job: dict, pl: dict, tr: dict, flags: dict[str, bool]) -> None:
@@ -932,44 +961,51 @@ class Engine:
             raise JobError("backup_file_missing")
         job["total"], job["current"] = 1, f"{tr['artist']} - {tr['name']}"
         self.touch(pl, tr, "restore")
-        chosen = tr["backups"].pop(index)
-        held = paths().tmp / f"restore-{uuid.uuid4().hex[:6]}{Path(chosen['file']).suffix}"
-        shutil.move(str(paths().data / chosen["file"]), str(held))
+        try:
+            self.restore_backup(pl, tr, tr["backups"][index])
+        finally:
+            self.refresh_notes(tr)
+            self.touch(pl, tr)
+        self.bus.log("info", "restored", tr["id"])
+        self.organize({pl["id"]})
+        job["done"] = 1
+
+    def restore_backup(self, pl: dict, tr: dict, chosen: dict) -> Path:
+        stored = paths().data / chosen["file"]
         path = self.lib.abs_file(tr)
+        entry = None
         if path is None:
             folder = self.lib.folder(pl)
             folder.mkdir(parents=True, exist_ok=True)
             stem = Path(tr["file"]).stem if tr.get("file") else folder_name(f"{tr['artist']} - {tr['name']}")
-            path = self.free_path(folder / f"{stem}{held.suffix}")
-            shutil.move(str(held), str(path))
+            target = self.reserve(folder / f"{stem}{stored.suffix}")
         else:
             entry = self.backup(tr, path, "before_restore")
-            target = path.with_suffix(held.suffix)
+            target = path.with_suffix(stored.suffix)
             if target != path:
-                target = self.free_path(target)
-            try:
-                fileops.install(held, target)
-            except OSError as exc:
+                target = self.reserve(target)
+        try:
+            fileops.install_copy(stored, target)
+        except OSError as exc:
+            if entry is not None:
                 self.drop_backup(tr, entry)
-                shutil.move(str(held), str(paths().data / chosen["file"]))
-                tr["backups"].insert(index, chosen)
-                self.touch(pl, tr)
-                locked = isinstance(exc, fileops.FileLockedError)
-                raise JobError("file_locked" if locked else "restore_failed") from exc
+            if target != path:
+                self.release(target)
+            locked = isinstance(exc, fileops.FileLockedError)
+            raise JobError("file_locked" if locked else "restore_failed") from exc
+        if path is not None:
             self.remove_replaced(tr, path, target)
-            path = target
-            self.prune_backups(tr)
-        self.set_file(tr, path, (chosen.get("source") or {}).get("via", "backup"))
+        tr["backups"].remove(chosen)
+        stored.unlink(missing_ok=True)
+        self.prune_backups(tr)
+        self.set_file(tr, target, (chosen.get("source") or {}).get("via", "backup"))
         tr["trimmed"], tr["proposal"] = chosen.get("trimmed"), None
         restored_id = (tr.get("source") or {}).get("id")
         if restored_id in tr["rejected_ids"]:
             tr["rejected_ids"].remove(restored_id)
-        self.check_and_verify(pl, tr, path)
-        self.refresh_notes(tr)
-        self.touch(pl, tr)
-        self.bus.log("info", "restored", tr["id"])
-        self.organize({pl["id"]})
-        job["done"] = 1
+        self.lib.save()
+        self.check_and_verify(pl, tr, target)
+        return target
 
     def _job_sync(
         self,

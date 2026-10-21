@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
 import sys
 import time
+import uuid
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 TEMP_MARK = ".spotcheck-"
 RETRY_DELAYS = (0.1, 0.2, 0.4, 0.8, 1.2, 1.6, 2.0)
@@ -38,12 +42,70 @@ def replace(src: Path, dst: Path) -> None:
 
 def install(src: Path, dst: Path) -> None:
     staged = temp_path(dst, "new")
-    shutil.move(str(src), str(staged))
     try:
+        shutil.move(str(src), str(staged))
         replace(staged, dst)
     except OSError:
         staged.unlink(missing_ok=True)
         raise
+
+
+def install_copy(src: Path, dst: Path) -> None:
+    staged = temp_path(dst, "new")
+    try:
+        shutil.copy2(src, staged)
+        replace(staged, dst)
+    except OSError:
+        staged.unlink(missing_ok=True)
+        raise
+
+
+def previous_path(path: Path) -> Path:
+    return path.with_name(f"{path.name}.bak")
+
+
+def write_json(path: Path, data: Any, keep_previous: bool = False) -> None:
+    text = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
+    tmp = path.with_name(f"{path.name}.{uuid.uuid4().hex[:8]}.tmp")
+    try:
+        with open(tmp, "w", encoding="utf-8") as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        if keep_previous and path.exists():
+            replace(path, previous_path(path))
+        replace(tmp, path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
+
+
+def _read_text(path: Path) -> str:
+    for delay in RETRY_DELAYS:
+        try:
+            return path.read_text(encoding="utf-8")
+        except PermissionError:
+            time.sleep(delay)
+    return path.read_text(encoding="utf-8")
+
+
+def read_json(path: Path, valid: Callable[[Any], bool] = lambda data: True) -> tuple[Any, Path | None]:
+    for candidate in (path, previous_path(path)):
+        try:
+            data = json.loads(_read_text(candidate))
+        except (FileNotFoundError, ValueError):
+            continue
+        if valid(data):
+            return data, candidate
+    return None, None
+
+
+def quarantine(path: Path) -> Path | None:
+    if not path.exists():
+        return None
+    target = path.with_name(f"{path.stem}.corrupt-{int(time.time())}{path.suffix}")
+    shutil.copy2(path, target)
+    return target
 
 
 def remove(path: Path) -> None:
