@@ -14,10 +14,12 @@ from typing import Any
 
 from . import fileops, tags
 from .config import paths
+from .errors import Cancelled
 
 CREATE_NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 NEW_PROCESS_GROUP = 0x00000200 if os.name == "nt" else 0
 PROCESS_TIMEOUT = 900
+JOB_THREADS = ("spotcheck-worker", "spotcheck-job")
 FFMPEG_EXE = "ffmpeg.exe" if os.name == "nt" else "ffmpeg"
 
 FP_ITEMS_PER_SECOND = 11025 / 1365
@@ -30,7 +32,12 @@ CUTOFF_EMPTY = 55.0
 
 _cache: dict[str, Any] = {}
 _active: set[subprocess.Popen] = set()
+_stopped: set[subprocess.Popen] = set()
 _active_lock = threading.Lock()
+
+
+class ProcessStopped(Cancelled):
+    pass
 
 
 def _ffmpeg_candidates():
@@ -87,14 +94,18 @@ def _spawn(cmd: list[str], cwd: str | None, text: bool, merge: bool, env: dict |
         env=env,
         **options,
     )
+    proc.job = threading.current_thread().name.startswith(JOB_THREADS)
     with _active_lock:
         _active.add(proc)
     return proc
 
 
-def _release(proc: subprocess.Popen) -> None:
+def _release(proc: subprocess.Popen) -> bool:
     with _active_lock:
         _active.discard(proc)
+        stopped = proc in _stopped
+        _stopped.discard(proc)
+    return stopped
 
 
 def kill_tree(proc: subprocess.Popen) -> None:
@@ -117,9 +128,10 @@ def kill_tree(proc: subprocess.Popen) -> None:
         proc.kill()
 
 
-def stop_all() -> int:
+def stop_all(jobs_only: bool = False) -> int:
     with _active_lock:
-        running = [p for p in _active if p.poll() is None]
+        running = [p for p in _active if p.poll() is None and (p.job or not jobs_only)]
+        _stopped.update(running)
     for proc in running:
         kill_tree(proc)
     return len(running)
@@ -127,6 +139,7 @@ def stop_all() -> int:
 
 def _run(cmd: list[str], timeout: float | None, cwd: str | None, text: bool) -> subprocess.CompletedProcess:
     proc = _spawn(cmd, cwd, text, merge=False)
+    stopped = False
     try:
         try:
             out, err = proc.communicate(timeout=timeout)
@@ -136,7 +149,9 @@ def _run(cmd: list[str], timeout: float | None, cwd: str | None, text: bool) -> 
                 proc.communicate(timeout=10)
             raise
     finally:
-        _release(proc)
+        stopped = _release(proc)
+    if stopped:
+        raise ProcessStopped(cmd[0])
     return subprocess.CompletedProcess(cmd, proc.returncode, out, err)
 
 
@@ -164,7 +179,9 @@ def run_streaming(
             timer.cancel()
         if proc.poll() is None:
             kill_tree(proc)
-        _release(proc)
+        stopped = _release(proc)
+    if stopped:
+        raise ProcessStopped(cmd[0])
     if expired.is_set():
         raise subprocess.TimeoutExpired(cmd, timeout or 0)
     return subprocess.CompletedProcess(cmd, proc.returncode, "".join(lines), "")

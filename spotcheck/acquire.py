@@ -10,6 +10,7 @@ from pathlib import Path
 
 from . import analysis, deps, sources, tags
 from .config import paths
+from .errors import Cancelled
 from .library import AUDIO_SUFFIXES, base_name, folder_name
 
 YTDLP_FORMATS = {"opus": "bestaudio[acodec=opus]/bestaudio", "m4a": "bestaudio[ext=m4a]/bestaudio", "mp3": "bestaudio"}
@@ -247,7 +248,7 @@ class Acquiring:
         entry = self.backup(tr, path, "trim") if backup else None
         try:
             trimmed = analysis.trim(path, start, end - start)
-        except OSError:
+        except (OSError, Cancelled):
             if entry is not None:
                 self.drop_backup(tr, entry)
             raise

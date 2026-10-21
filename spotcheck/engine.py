@@ -231,7 +231,7 @@ class Engine(Checks, Acquiring, Placement, Organizing):
             interrupt = job["state"] == "running" and job["kind"] in INTERRUPTIBLE
             self._emit_job(job)
         if interrupt:
-            analysis.stop_all()
+            analysis.stop_all(jobs_only=True)
         return True
 
     def _worker(self) -> None:
@@ -393,7 +393,7 @@ class Engine(Checks, Acquiring, Placement, Organizing):
                     job["done"] += 1
                 self._emit_job(job)
 
-        with cf.ThreadPoolExecutor(max_workers=int(self.st["threads"])) as pool:
+        with cf.ThreadPoolExecutor(max_workers=int(self.st["threads"]), thread_name_prefix="spotcheck-job") as pool:
             list(pool.map(work, items))
         self.organize({pl["id"] for pl, _ in items})
         statuses: dict[str, int] = {}
@@ -478,6 +478,7 @@ class Engine(Checks, Acquiring, Placement, Organizing):
                 log.exception("Loading %s failed", url)
                 self.bus.log("error", "sync_error", url=url, error=str(exc))
                 result = None
+            self._check_cancel(job)
             if not single:
                 self.lib.note_sync(pid or playlist_id(url), ok=result is not None)
             if result is None:

@@ -77,7 +77,7 @@ Name: "{autodesktop}\SpotCheck"; Filename: "{app}\runtime\SpotCheck.exe"; Parame
 Filename: "{app}\runtime\SpotCheck.exe"; Parameters: "-m spotcheck --packaged"; WorkingDir: "{app}"; Description: "{cm:LaunchProgram,SpotCheck}"; Flags: nowait postinstall skipifsilent
 
 [UninstallRun]
-Filename: "{app}\runtime\python.exe"; Parameters: "-m spotcheck --quit"; Flags: runhidden waituntilterminated; RunOnceId: "QuitSpotCheck"
+Filename: "{app}\runtime\python.exe"; Parameters: "-m spotcheck --packaged --quit"; Flags: runhidden waituntilterminated; RunOnceId: "QuitSpotCheck"
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}\runtime"
@@ -88,6 +88,6 @@ var
   ResultCode: Integer;
 begin
   if FileExists(ExpandConstant('{app}\runtime\python.exe')) then
-    Exec(ExpandConstant('{app}\runtime\python.exe'), '-m spotcheck --quit', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    Exec(ExpandConstant('{app}\runtime\python.exe'), '-m spotcheck --packaged --quit', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Result := '';
 end;

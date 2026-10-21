@@ -16,7 +16,7 @@ from pathlib import Path
 from . import __version__, analysis, config, deps, diagnostics, fileops, runtime
 from .config import configure
 
-LOOPBACK = ("127.0.0.1", "localhost", "::1")
+LOOPBACK = ("127.0.0.1", "localhost")
 SETUP_MESSAGES = {
     "command": "$ {text}",
     "output": "{text}",
@@ -65,14 +65,19 @@ def running_instance(host: str, port: int) -> bool:
         return False
 
 
-def instance_file() -> Path:
-    return config.paths().home / "instance.json"
+def app_home(home: str | None, packaged: bool) -> Path:
+    default = runtime.user_home() if packaged else os.environ.get("SPOTCHECK_HOME") or Path.cwd()
+    return Path(home or default).expanduser().resolve()
 
 
-def active_port(host: str, preferred: int) -> int | None:
+def instance_file(home: Path | None = None) -> Path:
+    return (home or config.paths().home) / "instance.json"
+
+
+def active_port(host: str, preferred: int, home: Path | None = None) -> int | None:
     ports = [preferred]
     try:
-        stored = json.loads(instance_file().read_text(encoding="utf-8")).get("port")
+        stored = json.loads(instance_file(home).read_text(encoding="utf-8")).get("port")
     except (OSError, ValueError, AttributeError):
         stored = None
     if isinstance(stored, int) and stored != preferred:
@@ -255,8 +260,12 @@ def main() -> None:
     parser.add_argument("--version", action="version", version=f"spotcheck {__version__}")
     args = parser.parse_args()
 
+    if args.quit:
+        running = active_port(args.host, args.port, app_home(args.home, args.packaged))
+        raise SystemExit(0 if running is None or quit_running(args.host, running) else 1)
+
     if args.packaged:
-        home = Path(args.home or runtime.user_home()).expanduser().resolve()
+        home = app_home(args.home, packaged=True)
         runtime.prepare(True, home)
         paths = configure(home, first_music=None if args.home else runtime.user_music() / "My library")
         runtime.log_to_file(paths.home)
@@ -265,9 +274,6 @@ def main() -> None:
         logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
         configure(args.home)
     readable_output()
-    if args.quit:
-        running = active_port(args.host, args.port)
-        raise SystemExit(0 if running is None or quit_running(args.host, running) else 1)
     if args.diagnostics:
         print(diagnostics.report(network=args.network))
         raise SystemExit(0 if deps.status(check_updates=False)["ready"] else 1)

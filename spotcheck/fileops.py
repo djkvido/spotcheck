@@ -73,11 +73,22 @@ def write_json(path: Path, data: Any, keep_previous: bool = False) -> None:
             handle.flush()
             os.fsync(handle.fileno())
         if keep_previous and path.exists():
-            replace(path, previous_path(path))
+            keep_copy(path, previous_path(path))
         replace(tmp, path)
     except BaseException:
         tmp.unlink(missing_ok=True)
         raise
+
+
+def keep_copy(path: Path, previous: Path) -> None:
+    try:
+        previous.unlink(missing_ok=True)
+        try:
+            os.link(path, previous)
+        except OSError:
+            shutil.copy2(path, previous)
+    except OSError:
+        pass
 
 
 def _read_text(path: Path) -> str:

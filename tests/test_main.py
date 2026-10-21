@@ -24,3 +24,18 @@ def test_a_second_start_finds_spotcheck_on_the_port_it_moved_to(workspace, monke
     assert __main__.active_port("127.0.0.1", 8765) == 8765
     __main__.forget_instance()
     assert not __main__.instance_file().exists()
+
+
+def test_quit_creates_nothing_in_the_current_folder(tmp_path, monkeypatch):
+    import pytest
+
+    from spotcheck import __main__
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("SPOTCHECK_HOME", raising=False)
+    monkeypatch.setattr(sys, "argv", ["spotcheck", "--quit"])
+    monkeypatch.setattr(__main__, "running_instance", lambda host, port: False)
+    with pytest.raises(SystemExit) as stop:
+        __main__.main()
+    assert stop.value.code == 0
+    assert list(tmp_path.iterdir()) == []

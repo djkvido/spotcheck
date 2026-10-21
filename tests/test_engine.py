@@ -228,3 +228,27 @@ def test_a_failing_save_does_not_stop_the_worker(engine, monkeypatch):
         time.sleep(0.02)
     assert engine.jobs[first]["state"] == engine.jobs[second]["state"] == "done"
     assert any(e["code"] == "save_failed" for e in engine.bus.logs)
+
+
+def test_a_check_cut_short_by_cancelling_is_not_kept(engine, workspace, monkeypatch):
+    from spotcheck import analysis
+
+    pl = engine.lib.data["playlists"][0]
+    tr = pl["tracks"][0]
+    folder = workspace.downloads / pl["folder"]
+    folder.mkdir()
+    (folder / "x.mp3").write_bytes(b"x")
+    tr["file"] = f"{pl['folder']}/x.mp3"
+    tr["check"] = {"verdict": "OK", "extra": 0, "notes": [], "cutoff_measured": True}
+
+    def stopped(path):
+        raise analysis.ProcessStopped("ffmpeg")
+
+    monkeypatch.setattr(analysis, "decode_check", stopped)
+    job = {"_outcomes": [], "_failed": 0, "_cancel": True, "current": "", "id": "j"}
+    from spotcheck.errors import Cancelled
+
+    with pytest.raises(Cancelled):
+        engine.process_track(job, pl, tr, {"validate": True})
+    assert tr["check"]["verdict"] == "OK"
+    assert job["_failed"] == 0

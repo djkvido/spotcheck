@@ -192,6 +192,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            if [ "$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft)" != "true" ]; then
+              echo "::error::$GITHUB_REF_NAME is already published and is left unchanged"
+              exit 1
+            fi
             gh release upload "$GITHUB_REF_NAME" release/* --clobber
             gh release edit "$GITHUB_REF_NAME" --notes-file notes.md
           else

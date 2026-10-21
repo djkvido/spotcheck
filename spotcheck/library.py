@@ -311,7 +311,7 @@ class Library:
         return [
             (p, p.relative_to(downloads).as_posix(), norm(p.stem), norm(NUMBER_PREFIX.sub("", p.stem, count=1)))
             for p in folder.iterdir()
-            if p.suffix.lower() in AUDIO_SUFFIXES and not fileops.is_temp(p)
+            if p.suffix.lower() in AUDIO_SUFFIXES and not fileops.is_temp(p) and p.stat().st_size > 0
         ]
 
     def find_file(
