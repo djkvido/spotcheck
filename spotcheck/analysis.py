@@ -4,6 +4,7 @@ import contextlib
 import os
 import re
 import shutil
+import signal
 import struct
 import subprocess
 import threading
@@ -15,6 +16,8 @@ from . import fileops, tags
 from .config import paths
 
 CREATE_NO_WINDOW = 0x08000000 if os.name == "nt" else 0
+NEW_PROCESS_GROUP = 0x00000200 if os.name == "nt" else 0
+PROCESS_TIMEOUT = 900
 FFMPEG_EXE = "ffmpeg.exe" if os.name == "nt" else "ffmpeg"
 
 FP_ITEMS_PER_SECOND = 11025 / 1365
@@ -26,6 +29,8 @@ CUTOFF_MIN_DROP = 12.0
 CUTOFF_EMPTY = 55.0
 
 _cache: dict[str, Any] = {}
+_active: set[subprocess.Popen] = set()
+_active_lock = threading.Lock()
 
 
 def _ffmpeg_candidates():
@@ -67,25 +72,83 @@ def ffmpeg_info(refresh: bool = False) -> dict[str, Any]:
     return _cache["info"]
 
 
+def _spawn(cmd: list[str], cwd: str | None, text: bool, merge: bool, env: dict | None = None) -> subprocess.Popen:
+    options: dict[str, Any] = {"text": True, "encoding": "utf-8", "errors": "replace"} if text else {}
+    if os.name == "nt":
+        options["creationflags"] = CREATE_NO_WINDOW | NEW_PROCESS_GROUP
+    else:
+        options["start_new_session"] = True
+    proc = subprocess.Popen(
+        cmd,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT if merge else subprocess.PIPE,
+        cwd=cwd,
+        env=env,
+        **options,
+    )
+    with _active_lock:
+        _active.add(proc)
+    return proc
+
+
+def _release(proc: subprocess.Popen) -> None:
+    with _active_lock:
+        _active.discard(proc)
+
+
+def kill_tree(proc: subprocess.Popen) -> None:
+    if proc.poll() is not None:
+        return
+    if os.name == "nt":
+        with contextlib.suppress(OSError, subprocess.SubprocessError):
+            subprocess.run(
+                ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                creationflags=CREATE_NO_WINDOW,
+                timeout=15,
+            )
+    else:
+        with contextlib.suppress(OSError):
+            os.killpg(proc.pid, signal.SIGKILL)
+    with contextlib.suppress(OSError):
+        proc.kill()
+
+
+def stop_all() -> int:
+    with _active_lock:
+        running = [p for p in _active if p.poll() is None]
+    for proc in running:
+        kill_tree(proc)
+    return len(running)
+
+
+def _run(cmd: list[str], timeout: float | None, cwd: str | None, text: bool) -> subprocess.CompletedProcess:
+    proc = _spawn(cmd, cwd, text, merge=False)
+    try:
+        try:
+            out, err = proc.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            kill_tree(proc)
+            with contextlib.suppress(subprocess.TimeoutExpired):
+                proc.communicate(timeout=10)
+            raise
+    finally:
+        _release(proc)
+    return subprocess.CompletedProcess(cmd, proc.returncode, out, err)
+
+
 def run_streaming(
     cmd: list[str], on_line: Callable[[str], None], timeout: float | None = None, cwd: str | None = None
 ) -> subprocess.CompletedProcess:
-    proc = subprocess.Popen(
-        cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        creationflags=CREATE_NO_WINDOW,
-        cwd=cwd,
-        env={**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"},
-    )
+    proc = _spawn(cmd, cwd, text=True, merge=True, env={**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"})
     expired = threading.Event()
 
     def stop() -> None:
         expired.set()
-        proc.kill()
+        kill_tree(proc)
 
     timer = threading.Timer(timeout, stop) if timeout else None
     if timer:
@@ -99,26 +162,22 @@ def run_streaming(
     finally:
         if timer:
             timer.cancel()
+        if proc.poll() is None:
+            kill_tree(proc)
+        _release(proc)
     if expired.is_set():
         raise subprocess.TimeoutExpired(cmd, timeout or 0)
     return subprocess.CompletedProcess(cmd, proc.returncode, "".join(lines), "")
 
 
-def run_text(cmd: list[str], timeout: float | None = None, cwd: str | None = None) -> subprocess.CompletedProcess:
-    return subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        creationflags=CREATE_NO_WINDOW,
-        timeout=timeout,
-        cwd=cwd,
-    )
+def run_text(
+    cmd: list[str], timeout: float | None = PROCESS_TIMEOUT, cwd: str | None = None
+) -> subprocess.CompletedProcess:
+    return _run(cmd, timeout, cwd, text=True)
 
 
-def run_bin(cmd: list[str], timeout: float | None = None) -> subprocess.CompletedProcess:
-    return subprocess.run(cmd, capture_output=True, creationflags=CREATE_NO_WINDOW, timeout=timeout)
+def run_bin(cmd: list[str], timeout: float | None = PROCESS_TIMEOUT) -> subprocess.CompletedProcess:
+    return _run(cmd, timeout, None, text=False)
 
 
 def duration(path: Path) -> float:
@@ -130,7 +189,10 @@ def duration(path: Path) -> float:
             return float(f.info.length)
     except Exception:
         pass
-    r = run_text([ffmpeg(), "-hide_banner", "-i", str(path)])
+    try:
+        r = run_text([ffmpeg(), "-hide_banner", "-i", str(path)], timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return 0.0
     m = re.search(r"Duration:\s*(\d+):(\d+):([\d.]+)", r.stderr)
     return int(m.group(1)) * 3600 + int(m.group(2)) * 60 + float(m.group(3)) if m else 0.0
 
@@ -200,10 +262,11 @@ def cover_jpeg(path: Path) -> bytes:
     data = tags.cover(path)
     if data:
         return data
-    r = run_bin(
-        [ffmpeg(), "-v", "error", "-i", str(path), "-an", "-map", "0:v:0", "-c:v", "copy", "-f", "image2pipe", "pipe:1"]
-    )
-    return r.stdout
+    cmd = [ffmpeg(), "-v", "error", "-i", str(path), "-an", "-map", "0:v:0", "-c:v", "copy", "-f", "image2pipe"]
+    try:
+        return run_bin([*cmd, "pipe:1"], timeout=60).stdout
+    except (OSError, subprocess.SubprocessError):
+        return b""
 
 
 def _silences(stderr: str) -> tuple[list[float], list[float]]:

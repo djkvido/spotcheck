@@ -33,6 +33,7 @@ UPSCALE_CUTOFF = 16.5
 SPOTDL_LOAD_TIMEOUT = 1800
 SPOTDL_FOUND = re.compile(r"Found (\d+) songs? in (.+?)(?: \((?:Playlist|Album|Song)\))?\s*$")
 LOG_LEVELS = {"info": logging.INFO, "warn": logging.WARNING, "error": logging.ERROR}
+INTERRUPTIBLE = ("process", "sync")
 
 
 class Cancelled(Exception):
@@ -190,8 +191,11 @@ class Engine:
             job["_cancel"] = True
             if job["state"] == "queued":
                 job["state"], job["finished"] = "cancelled", time.time()
+            interrupt = job["state"] == "running" and job["kind"] in INTERRUPTIBLE
             self._emit_job(job)
-            return True
+        if interrupt:
+            analysis.stop_all()
+        return True
 
     def _worker(self) -> None:
         handlers: dict[str, Callable[..., None]] = {

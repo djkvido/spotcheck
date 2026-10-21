@@ -130,21 +130,13 @@ def status(check_updates: bool = True) -> dict[str, Any]:
 
 def _run(cmd: list[str], log: LogFn, timeout: float = 1800) -> bool:
     log("info", "command", text=" ".join(cmd))
+
+    def echo(line: str) -> None:
+        if line.strip():
+            log("info", "output", text=line.rstrip()[:300])
+
     try:
-        proc = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            creationflags=analysis.CREATE_NO_WINDOW,
-        )
-        assert proc.stdout is not None
-        for line in proc.stdout:
-            if line.strip():
-                log("info", "output", text=line.rstrip()[:300])
-        return proc.wait(timeout=timeout) == 0
+        return analysis.run_streaming(cmd, echo, timeout=timeout).returncode == 0
     except (OSError, subprocess.SubprocessError) as exc:
         log("error", "command_failed", error=str(exc))
         return False

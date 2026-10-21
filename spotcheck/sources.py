@@ -410,7 +410,7 @@ def fetch_candidate(cand: dict, ytdlp_cmd: list[str]) -> Path | None:
         cand["url"],
     ]
     try:
-        subprocess.run(cmd, capture_output=True, timeout=240, creationflags=analysis.CREATE_NO_WINDOW)
+        analysis.run_bin(cmd, timeout=240)
     except (OSError, subprocess.SubprocessError):
         return None
     return cached_candidate(cand["id"])

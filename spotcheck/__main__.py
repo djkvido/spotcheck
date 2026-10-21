@@ -11,7 +11,7 @@ import urllib.request
 import webbrowser
 from pathlib import Path
 
-from . import __version__, deps, diagnostics, runtime
+from . import __version__, analysis, deps, diagnostics, runtime
 from .config import configure
 
 SETUP_MESSAGES = {
@@ -192,7 +192,10 @@ def main() -> None:
     if not args.no_browser:
         threading.Timer(1.2, webbrowser.open, args=(url,)).start()
     print(f"SpotCheck {__version__} is running at {url} (press Ctrl+C to stop)")
-    server.run()
+    try:
+        server.run()
+    finally:
+        analysis.stop_all()
 
 
 if __name__ == "__main__":
