@@ -4,6 +4,8 @@ Notable changes of each release. The format follows [Keep a Changelog](https://k
 
 ## Unreleased
 
+## 1.1.1 - 2026-10-22
+
 ### Changed
 
 - The installers include platformdirs 4.12.3, and the build uses updated GitHub Actions.
