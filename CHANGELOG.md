@@ -6,7 +6,7 @@ Notable changes of each release. The format follows [Keep a Changelog](https://k
 
 ### Security
 
-- The installers include opentelemetry-api 1.45.1, which fixes a known vulnerability in a dependency of yt-dlp.
+- The installers include opentelemetry-api 1.45.1, which fixes a known vulnerability in a dependency of FastAPI.
 
 ## 1.1.0 - 2026-10-21
 
