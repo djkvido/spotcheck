@@ -4,6 +4,10 @@ Notable changes of each release. The format follows [Keep a Changelog](https://k
 
 ## Unreleased
 
+### Changed
+
+- The installers include platformdirs 4.12.3, and the build uses updated GitHub Actions.
+
 ### Security
 
 - The installers include opentelemetry-api 1.45.1, which fixes a known vulnerability in a dependency of FastAPI.
