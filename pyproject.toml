@@ -15,7 +15,7 @@ requires-python = ">=3.10"
 dependencies = [
     "fastapi>=0.115",
     "uvicorn>=0.54.0",
-    "yt-dlp[default]>=2026.07.04,<2027",
+    "yt-dlp[default]>=2026.8.19,<2027",
     "mutagen>=1.47,<2",
     "rapidfuzz>=3.14.5,<4",
     "ytmusicapi>=1.12.3,<2",
@@ -23,15 +23,15 @@ dependencies = [
     "datastar-py>=1.0.3",
     "jinja2>=3.1.5",
     "platformdirs>=4.12.3,<5",
-    "pydantic>=2.9.2,<3",
+    "pydantic>=2.13.5,<3",
     "pykakasi>=2.3,<3",
     "python-multipart>=0.0.20",
     "python-slugify[unidecode]>=8.0.4,<9",
     "requests>=2.34.2,<3",
     "rich>=13.9.4,<14",
-    "soundcloud-v2>=1.6,<2",
+    "soundcloud-v2>=1.7.0,<2",
     "spotipy>=2.26,<3",
-    "spotipyfree>=1.9.13,<2",
+    "spotipyfree>=1.9.14,<2",
     "syncedlyrics>=1.0.1,<2",
     "websockets~=14.1",
 ]
@@ -56,7 +56,7 @@ Repository = "https://github.com/djkvido/spotcheck"
 Issues = "https://github.com/djkvido/spotcheck/issues"
 
 [project.optional-dependencies]
-dev = ["pytest>=9.1.1", "ruff>=0.17,<0.18", "httpx2>=2.13", "pip-audit>=2.10.1"]
+dev = ["pytest>=9.1.1", "ruff>=0.17,<0.18", "httpx2>=2.13.1", "pip-audit>=2.10.1"]
 
 [project.scripts]
 spotcheck = "spotcheck.__main__:main"
