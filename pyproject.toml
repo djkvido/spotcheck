@@ -31,7 +31,7 @@ dependencies = [
     "rich>=13.9.4,<14",
     "soundcloud-v2>=1.6,<2",
     "spotipy>=2.26,<3",
-    "spotipyfree>=1.9.13,<2",
+    "spotipyfree>=1.9.14,<2",
     "syncedlyrics>=1.0.1,<2",
     "websockets~=14.1",
 ]
