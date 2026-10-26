@@ -6,7 +6,7 @@
 
 **Is every file in your music library really the song it should be?** SpotCheck checks it for you. Each track is compared with the official preview by audio fingerprint, and its length, silence and real sound quality are measured, so you only listen to the few tracks that need it.
 
-Open source, runs on your computer, for Windows and macOS.
+Open source, runs on your computer, for Windows and macOS. It also includes a **format converter** for audio and video files.
 
 **[Download for Windows and macOS](https://github.com/djkvido/spotcheck/releases/latest)** · [How it works](#how-it-works) · [Run from source](#running-from-source)
 
@@ -42,7 +42,7 @@ Checking a whole library by ear takes hours. SpotCheck leaves you only the track
 
 **Load**
 
-- **Playlists from several services:** Spotify playlists and albums (through spotDL), YouTube and YouTube Music playlists, SoundCloud sets and Bandcamp albums (through yt-dlp). Tracks of the latter are matched with the official release on Deezer, so their length and preview are verified like Spotify tracks.
+- **Playlists, albums and single songs from several services:** Spotify playlists and albums (through spotDL), YouTube and YouTube Music playlists, SoundCloud sets and Bandcamp albums (through yt-dlp). Tracks of the latter are matched with the official release on Deezer, so their length and preview are verified like Spotify tracks.
 - **Single songs** from Spotify, YouTube, SoundCloud and Bandcamp: paste the link of one song and it is collected in the **Singles** list, in its own folder, and checked like every other track.
 - **Downloads** into one folder per playlist, with tags and cover art. Choose **Opus** or **M4A** to keep YouTube's own stream without re-encoding, or **MP3** at a bitrate of your choice.
 
@@ -73,6 +73,16 @@ Checking a whole library by ear takes hours. SpotCheck leaves you only the track
 - **Tuning** of every threshold, search template and source, with defaults that work for most libraries.
 - **CSV export** of the current view, and **reports from the command line** for scheduled checks without opening the app.
 - **English and Czech UI**, picked from your browser language and switchable in the top bar.
+
+**Convert formats**
+
+- **A converter for audio and video files** in its own tab, built on FFmpeg and running entirely on your computer: no upload, no account, no limits on size or number of files.
+- **Ready-made formats:** MP3, M4A (AAC), Opus, OGG Vorbis, FLAC, ALAC, WAV, AIFF, WMA and AC-3 for sound; MP4 with H.264, H.265 or AV1, WebM with VP9 or AV1, MKV, MOV (H.264 or ProRes), AVI, WMV and GIF for video. The sound of a video can be saved on its own, also without re-encoding, and MKV and MP4 can be rewrapped without re-encoding.
+- **All formats** mode lists every container and codec your FFmpeg can write, for anything the ready-made formats do not cover.
+- **Adjustments:** quality, resolution, frame rate, sample rate, mono or stereo, loudness normalisation (EBU R128), removing the sound and converting only a part of the file.
+- **Fast on the graphics card** with NVIDIA NVENC, Intel Quick Sync, AMD AMF or Apple VideoToolbox when available; if the card cannot encode a file, it is converted by the processor instead.
+- **Safe with your files:** the original is never changed, an existing file is never overwritten (the new one gets a number), tags and cover art are kept, and a failed or cancelled conversion leaves nothing behind. Converting MP3 to a lossless format shows a note that it does not bring back lost quality.
+- Add files with the file dialog or by dragging them into the window; several files are converted in parallel.
 
 ![Track details: findings such as a low-quality source, your file and the official preview side by side](docs/screenshot-detail.png)
 
@@ -114,6 +124,10 @@ ffmpeg -hide_banner -muxers | grep chromaprint
 ```
 
 To use a specific FFmpeg binary, point the `SPOTCHECK_FFMPEG` environment variable at it. The **Dependencies** panel in the app shows what was found and offers updates.
+
+### Extended codecs for the converter
+
+The FFmpeg in the installers covers the sound formats, rewrapping without re-encoding, ProRes, AVI, WMV and GIF. Video formats such as H.264, H.265, AV1 and VP9 and the *All formats* mode use a full FFmpeg build that the converter offers to download once (about 100 MB on Windows, 57 MB on macOS): the [gyan.dev](https://www.gyan.dev/ffmpeg/builds/) build on Windows and the [martin-riedl.de](https://ffmpeg.martin-riedl.de/) build on Apple silicon Macs, both under GPL-3.0-or-later. The download is checked against a SHA-256 hash fixed in SpotCheck before it is used, stored in the `codecs` folder of the application data and can be removed in **Settings › Dependencies**. If the FFmpeg SpotCheck finds already includes these codecs, as a full build installed with winget or Homebrew does, nothing needs to be downloaded.
 
 ### Projects and where your files go
 
@@ -179,11 +193,13 @@ A file converted from a low-quality source therefore shows a cut well below what
 | Nothing is loaded after adding a link | Open **Settings › About › Diagnostics** and create a report. It shows which component is missing and whether Spotify, YouTube and Deezer can be reached. The Log card and the file `spotcheck.log` (in the `logs` folder of the application data) show the reason of every failed load. |
 | Tracks with annotated titles are not found | Adjust the search templates in Settings. `{title}` is the title without annotations such as a version, tempo or dance style. |
 | iTunes previews are slow | Apple rate-limits its search API. Keep only Deezer enabled in Settings. |
+| The converter offers only sound formats | Download the extended codecs at the top of the Converter tab or in Settings › Dependencies. |
+| A conversion without re-encoding fails | Not every stream fits every container; choose MKV, which accepts almost everything, or a format that re-encodes. |
 | The page looks outdated after an update | Reload it with Ctrl+F5. |
 
 ## Privacy
 
-SpotCheck has no account, no analytics and no telemetry. Everything stays on your computer. The diagnostics report is only created and shown when you ask for it; home folder and user name are replaced in it, and nothing is sent anywhere. It only contacts the services it needs for your playlists: Spotify, YouTube, YouTube Music, SoundCloud or Bandcamp for track lists and audio, Deezer and the iTunes Search API for official previews and metadata, the lyrics sites spotDL uses (Genius, AZLyrics, Musixmatch), and PyPI when the Dependencies page checks for updates. Updates and installations of components start only after you confirm them; see section 4 of the [Terms of Use](TERMS.md#4-connections-and-downloads).
+SpotCheck has no account, no analytics and no telemetry. Everything stays on your computer. The diagnostics report is only created and shown when you ask for it; home folder and user name are replaced in it, and nothing is sent anywhere. It only contacts the services it needs for your playlists: Spotify, YouTube, YouTube Music, SoundCloud or Bandcamp for track lists and audio, Deezer and the iTunes Search API for official previews and metadata, the lyrics sites spotDL uses (Genius, AZLyrics, Musixmatch), PyPI when the Dependencies page checks for updates, and GitHub or ffmpeg.martin-riedl.de when you download the extended codecs for the converter. The converter itself works offline. Updates and installations of components start only after you confirm them; see section 4 of the [Terms of Use](TERMS.md#4-connections-and-downloads).
 
 ## Legal notice
 

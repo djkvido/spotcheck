@@ -1,12 +1,12 @@
 # SpotCheck Terms of Use
 
-Version 1, 15 October 2026. Czech translation: [TERMS.cs.md](TERMS.cs.md).
+Version 2, 26 October 2026. Czech translation: [TERMS.cs.md](TERMS.cs.md).
 
 SpotCheck asks you to accept these terms when you install it and when you start it for the first time. If you do not agree with them, do not install or use SpotCheck.
 
 ## 1. What SpotCheck is
 
-SpotCheck is a hobby open-source project by djkvido, published at https://github.com/djkvido/spotcheck. It helps you keep a local music library in order: it reads the track lists of playlists you give it, finds the tracks on publicly available sources, checks every file against the official preview and measures its sound quality.
+SpotCheck is a hobby open-source project by djkvido, published at https://github.com/djkvido/spotcheck. It helps you keep a local music library in order: it reads the track lists of playlists you give it, finds the tracks on publicly available sources, checks every file against the official preview and measures its sound quality. Its converter converts audio and video files on your computer between formats.
 
 SpotCheck is free software under the GNU General Public License, version 3 or later (GPL). The GPL governs copying, modifying and distributing SpotCheck. These terms describe what you are responsible for when you use it. They do not limit any right the GPL gives you.
 
@@ -36,7 +36,8 @@ SpotCheck runs on your computer and only accepts connections from it. It has no 
 - the services that host your playlists and tracks (Spotify, YouTube, YouTube Music, SoundCloud, Bandcamp) to read track lists and download audio;
 - Deezer and the iTunes Search API for official previews and metadata, and the lyrics sites spotDL uses to add lyrics (Genius, AZLyrics, Musixmatch);
 - PyPI (pypi.org) to show available updates of its components on the Dependencies page, and to download an update of yt-dlp when you ask for it;
-- GitHub (github.com) and the distribution sites of FFmpeg and Deno, only when you run SpotCheck from source and ask it to install FFmpeg or Deno.
+- GitHub (github.com) and the distribution sites of FFmpeg and Deno, only when you run SpotCheck from source and ask it to install FFmpeg or Deno;
+- GitHub (github.com) on Windows or ffmpeg.martin-riedl.de on macOS, only when you ask the converter to download its extended codecs.
 
 The app never updates or installs a component on its own. It tells you what it is going to download and from where, and starts only after you confirm it. When you run SpotCheck from source, its install and start scripts download the Python packages it needs from PyPI and, if they are missing, Python, FFmpeg and Deno from their official distribution channels. Downloaded components are third-party software under their own licenses.
 

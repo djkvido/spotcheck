@@ -5,7 +5,7 @@
 | Windows 10 and 11 (64-bit) | `SpotCheck-<version>-windows-x64-setup.exe` |
 | macOS 11 or newer on Apple Silicon (M1 and later) | `SpotCheck-<version>-macos-arm64.dmg` |
 
-Everything SpotCheck needs is included: Python, FFmpeg with Chromaprint and Deno. Nothing else has to be installed. The installer and the first start ask you to agree to the [Terms of Use](https://github.com/djkvido/spotcheck/blob/main/TERMS.md).
+Everything SpotCheck needs is included: Python, FFmpeg with Chromaprint and Deno. Nothing else has to be installed. For video formats the converter offers to download extended codecs once, when you ask for it. The installer and the first start ask you to agree to the [Terms of Use](https://github.com/djkvido/spotcheck/blob/main/TERMS.md).
 
 ### Windows
 

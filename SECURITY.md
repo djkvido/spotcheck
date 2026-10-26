@@ -17,6 +17,7 @@ Include what you found, how to reproduce it and which version and operating syst
 - External programs are started with argument lists, never through a shell, and links are always passed after `--`, so they cannot be read as options.
 - Audio is never changed without a backup. A replaced or trimmed file can always be restored.
 - SpotCheck collects no data and sends nothing anywhere except the requests needed to search and download music and official previews.
+- The converter works on local files only. Files dragged into the window are copied into the application data, converted and removed again. Its extended codecs are downloaded only after you click the button, over HTTPS from a fixed address, and are rejected unless their size and SHA-256 hash match the values fixed in [`spotcheck/codecs.py`](spotcheck/codecs.py).
 
 ## How the releases are built
 

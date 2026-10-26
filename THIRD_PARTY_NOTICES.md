@@ -15,6 +15,15 @@ SpotCheck is licensed under the [GNU General Public License v3.0 or later](LICEN
 
 FFmpeg is built without GPL or non-free components by [`packaging/build_ffmpeg.sh`](packaging/build_ffmpeg.sh) from the official source releases pinned in [`packaging/versions.json`](packaging/versions.json). Every release on GitHub carries the complete corresponding source code of that build (`spotcheck-<version>-ffmpeg-sources.tar.gz`).
 
+## Downloaded on request
+
+The converter can download a full FFmpeg build once, when you ask for it. It is not part of the installers, is distributed by its authors under its own license and is stored in the `codecs` folder of the application data together with its license text.
+
+| Component | License | Source |
+|---|---|---|
+| FFmpeg full build for Windows by gyan.dev | GPL-3.0-or-later | <https://www.gyan.dev/ffmpeg/builds/> |
+| FFmpeg build for macOS by Martin Riedl | GPL-3.0-or-later | <https://ffmpeg.martin-riedl.de> |
+
 ## Python packages
 
 Installed from the hashed lock files in [`packaging/`](packaging). spotDL is run as a separate program.

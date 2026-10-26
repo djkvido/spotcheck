@@ -4,6 +4,18 @@ Notable changes of each release. The format follows [Keep a Changelog](https://k
 
 ## Unreleased
 
+### Added
+
+- A format converter in its own tab: audio and video files are converted on your computer into MP3, M4A, Opus, OGG, FLAC, ALAC, WAV, AIFF, WMA, AC-3, MP4 (H.264, H.265, AV1), WebM (VP9, AV1), MKV, MOV (H.264, ProRes), AVI, WMV or GIF, or into any other format FFmpeg can write. The sound of a video can be saved on its own, and MKV and MP4 can be rewrapped without re-encoding.
+- Conversions can change the quality, resolution, frame rate, sample rate and channels, even out the loudness, remove the sound and convert only a part of a file. They use the graphics card when it can encode the format, run several at once and can be cancelled or retried.
+- The original file is never changed or overwritten, tags and cover art are kept, and a failed or cancelled conversion leaves no partial file behind.
+- Extended codecs for the converter: a full FFmpeg build that can be downloaded once from the converter or Settings › Dependencies, checked against a fixed SHA-256 hash, and removed again.
+
+### Changed
+
+- Adding a single song is easier to find: the button and the dialog are now called Add playlist or song, and the texts explain that single songs are collected in the Singles list.
+- The Terms of Use (version 2) mention the converter and the download of its extended codecs, so they are shown once more for agreement.
+
 ## 1.1.1 - 2026-10-22
 
 ### Changed
