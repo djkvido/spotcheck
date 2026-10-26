@@ -89,6 +89,17 @@ def test_encoder_and_muxer_lists_are_parsed():
     assert convert.parse_muxer_help(MUXER_HELP) == {"ext": "mkv", "video": "h264", "audio": "vorbis"}
 
 
+def test_muxer_lists_of_older_ffmpeg_are_parsed():
+    older = """File formats:
+ D. = Demuxing supported
+ .E = Muxing supported
+ --
+  E 3g2             3GP2
+ DE flac            raw FLAC
+"""
+    assert convert.parse_muxers(older) == {"3g2": "3GP2", "flac": "raw FLAC"}
+
+
 def test_probe_output_separates_cover_art_from_video():
     data = {
         "format": {"duration": "200.5", "format_name": "mp3", "tags": {"TITLE": "Song"}},

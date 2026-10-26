@@ -364,7 +364,7 @@ def parse_muxers(text: str) -> dict[str, str]:
     found: dict[str, str] = {}
     started = False
     for line in text.splitlines():
-        if line.strip().startswith("---"):
+        if line.strip().startswith("--"):
             started = True
             continue
         m = MUXER_LINE.match(line) if started else None
