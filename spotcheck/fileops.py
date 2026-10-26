@@ -5,6 +5,7 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
 import time
 import uuid
 from collections.abc import Callable
@@ -13,6 +14,8 @@ from typing import Any
 
 TEMP_MARK = ".spotcheck-"
 RETRY_DELAYS = (0.1, 0.2, 0.4, 0.8, 1.2, 1.6, 2.0)
+
+_reserve_lock = threading.Lock()
 
 
 class FileLockedError(OSError):
@@ -38,6 +41,33 @@ def replace(src: Path, dst: Path) -> None:
             if delay is None:
                 raise FileLockedError(dst) from exc
             time.sleep(delay)
+
+
+def free_path(target: Path) -> Path:
+    candidate, n = target, 2
+    while candidate.exists():
+        candidate = target.with_name(f"{target.stem} ({n}){target.suffix}")
+        n += 1
+    return candidate
+
+
+def reserve(target: Path) -> Path:
+    with _reserve_lock:
+        while True:
+            candidate = free_path(target)
+            try:
+                candidate.open("xb").close()
+            except FileExistsError:
+                continue
+            return candidate
+
+
+def release(reserved: Path) -> None:
+    try:
+        if reserved.stat().st_size == 0:
+            reserved.unlink()
+    except OSError:
+        pass
 
 
 def install(src: Path, dst: Path) -> None:

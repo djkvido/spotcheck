@@ -25,31 +25,9 @@ class Placement:
         if (source or {}).get("id") != (tr.get("source") or {}).get("id"):
             tr["source"] = {**source, "via": "file"} if source else None
 
-    @staticmethod
-    def free_path(target: Path) -> Path:
-        candidate, n = target, 2
-        while candidate.exists():
-            candidate = target.with_name(f"{target.stem} ({n}){target.suffix}")
-            n += 1
-        return candidate
-
-    def reserve(self, target: Path) -> Path:
-        with self._place_lock:
-            while True:
-                candidate = self.free_path(target)
-                try:
-                    candidate.open("xb").close()
-                except FileExistsError:
-                    continue
-                return candidate
-
-    @staticmethod
-    def release(reserved: Path) -> None:
-        try:
-            if reserved.stat().st_size == 0:
-                reserved.unlink()
-        except OSError:
-            pass
+    free_path = staticmethod(fileops.free_path)
+    reserve = staticmethod(fileops.reserve)
+    release = staticmethod(fileops.release)
 
     def remove_replaced(self, tr: dict, old: Path, new: Path) -> None:
         if old == new:

@@ -84,7 +84,6 @@ class Engine(Checks, Acquiring, Placement, Organizing):
         self.lock = threading.RLock()
         self._preview_fps: dict[tuple[str, float], tuple[int, ...]] = {}
         self._preview_lock = threading.Lock()
-        self._place_lock = threading.Lock()
         self._clean_workspace()
         self._next_scan = 0.0
         self._automation = threading.Event()
