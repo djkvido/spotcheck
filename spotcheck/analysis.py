@@ -156,9 +156,15 @@ def _run(cmd: list[str], timeout: float | None, cwd: str | None, text: bool) -> 
 
 
 def run_streaming(
-    cmd: list[str], on_line: Callable[[str], None], timeout: float | None = None, cwd: str | None = None
+    cmd: list[str],
+    on_line: Callable[[str], None],
+    timeout: float | None = None,
+    cwd: str | None = None,
+    on_start: Callable[[subprocess.Popen], None] | None = None,
 ) -> subprocess.CompletedProcess:
     proc = _spawn(cmd, cwd, text=True, merge=True, env={**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"})
+    if on_start:
+        on_start(proc)
     expired = threading.Event()
 
     def stop() -> None:

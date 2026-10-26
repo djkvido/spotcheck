@@ -14,7 +14,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from . import analysis, runtime
+from . import analysis, codecs, runtime
 
 LogFn = Callable[..., None]
 
@@ -125,6 +125,7 @@ def status(check_updates: bool = True) -> dict[str, Any]:
         "python": sys.version.split()[0],
         "platform": sys.platform,
         "packaged": runtime.packaged(),
+        "codecs": codecs.status(),
     }
 
 

@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import threading
+import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Literal
@@ -18,10 +19,12 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import __version__, analysis, deps, diagnostics, fileops, origins, projects, sources, terms
+from . import __version__, analysis, codecs, convert, deps, diagnostics, fileops, origins, projects, sources, terms
 from . import settings as settings_mod
 from .config import STATIC_DIR, paths
+from .converter import Converter
 from .engine import Bus, Engine
+from .errors import JobError
 from .library import Library, playlist_id
 
 LOCAL_HOSTS = {"127.0.0.1", "localhost", "[::1]"}
@@ -51,6 +54,8 @@ FLAGS = ("download", "validate", "verify", "fix", "trim", "force_fix")
 MAX_RANGE = 4 * 1024 * 1024
 EVENT_QUEUE = 2000
 PICKER_TIMEOUT = 900
+UPLOAD_RESERVE = 2 * 1024**3
+MAX_FILES = 500
 
 
 class UrlsRequest(BaseModel):
@@ -107,6 +112,16 @@ class FolderRequest(BaseModel):
 class ScopeRequest(BaseModel):
     playlist_id: str | None = None
     track_ids: list[str] | None = None
+
+
+class ConvertRequest(BaseModel):
+    files: list[str] = Field(min_length=1, max_length=MAX_FILES)
+    target: dict[str, Any]
+    folder: str | None = None
+
+
+class PathsRequest(BaseModel):
+    paths: list[str] = Field(min_length=1, max_length=MAX_FILES)
 
 
 class ExportRequest(BaseModel):
@@ -212,6 +227,46 @@ def pick_folder(initial: str | None) -> str | None:
     return str(Path(chosen)) if chosen else None
 
 
+def apple_script_files(start: str) -> list[str]:
+    location = start.replace("\\", "\\\\").replace('"', '\\"')
+    lines = [
+        f'set picked to choose file with multiple selections allowed default location POSIX file "{location}"',
+        'set out to ""',
+        "repeat with f in picked",
+        "set out to out & POSIX path of f & linefeed",
+        "end repeat",
+        "return out",
+    ]
+    return ["osascript", *[arg for line in lines for arg in ("-e", line)]]
+
+
+def pick_files(initial: str | None) -> list[str]:
+    start = initial if initial and Path(initial).is_dir() else str(Path.home())
+    with _picker_lock:
+        if sys.platform == "darwin":
+            try:
+                result = analysis.run_text(apple_script_files(start), timeout=PICKER_TIMEOUT)
+            except (OSError, subprocess.SubprocessError):
+                return []
+            chosen = result.stdout.splitlines() if result.returncode == 0 else []
+        else:
+            import tkinter
+            from tkinter import filedialog
+
+            root = tkinter.Tk()
+            root.withdraw()
+            root.attributes("-topmost", True)
+            try:
+                chosen = list(filedialog.askopenfilenames(parent=root, initialdir=start))
+            finally:
+                root.destroy()
+    return [str(Path(c)) for c in chosen if c.strip()]
+
+
+def convert_error(exc: JobError) -> HTTPException:
+    return HTTPException(422 if exc.code.startswith(("folder_", "invalid_", "unknown_")) else 409, exc.code)
+
+
 def folder_picker_available() -> bool:
     if sys.platform == "darwin":
         return shutil.which("osascript") is not None
@@ -232,6 +287,7 @@ def create_app(automation: bool = True) -> FastAPI:
         bus.emit({"type": "saved", "t": engine.lib.saved_at})
 
     engine = Engine(Library(on_save=on_save), bus)
+    converter = Converter(bus)
 
     def lib() -> Library:
         return engine.lib
@@ -239,10 +295,12 @@ def create_app(automation: bool = True) -> FastAPI:
     @asynccontextmanager
     async def lifespan(_: FastAPI):
         bus.loop = asyncio.get_running_loop()
+        await asyncio.to_thread(convert.clean_inbox)
         await asyncio.to_thread(lib().link_files)
         if automation:
             engine.start_automation()
         yield
+        await asyncio.to_thread(converter.close)
         await asyncio.to_thread(lib().save)
         await asyncio.to_thread(sources.flush_index)
 
@@ -661,5 +719,141 @@ def create_app(automation: bool = True) -> FastAPI:
         except OSError as exc:
             raise HTTPException(500, "open_failed") from exc
         return {"ok": True}
+
+    def convert_state() -> dict[str, Any]:
+        caps = convert.capabilities()
+        return {
+            "tool": {k: caps[k] for k in ("ffmpeg", "ffprobe", "version", "extended")},
+            "hardware": caps["hardware"],
+            "presets": convert.public_presets(caps),
+            "codecs": {**codecs.status(), "job": dict(converter.codecs_job)},
+            "items": converter.public(),
+            "default_folder": str(convert.default_folder()),
+            "picker": folder_picker_available(),
+            "options": {
+                "resolutions": convert.RESOLUTIONS,
+                "fps": convert.FRAME_RATES,
+                "sample_rates": convert.SAMPLE_RATES,
+            },
+        }
+
+    @app.get("/api/convert")
+    async def get_convert() -> dict[str, Any]:
+        return await asyncio.to_thread(convert_state)
+
+    @app.get("/api/convert/formats")
+    async def get_formats() -> dict[str, Any]:
+        return await asyncio.to_thread(convert.formats)
+
+    @app.post("/api/convert/pick")
+    async def choose_files(body: FolderRequest) -> dict[str, list[str]]:
+        if not folder_picker_available():
+            raise HTTPException(501, "folder_picker_unavailable")
+        return {"paths": await asyncio.to_thread(pick_files, body.initial)}
+
+    @app.post("/api/convert/probe")
+    async def probe_files(body: PathsRequest) -> dict[str, list[dict[str, Any]]]:
+        def run() -> list[dict[str, Any]]:
+            return [convert.describe(Path(p).expanduser()) for p in body.paths]
+
+        return {"files": await asyncio.to_thread(run)}
+
+    @app.post("/api/convert/upload")
+    async def upload_file(request: Request, name: str) -> dict[str, Any]:
+        folder = convert.inbox() / uuid.uuid4().hex[:12]
+        folder.mkdir(parents=True, exist_ok=True)
+        target = folder / convert.safe_filename(name)
+        expected = int(request.headers.get("content-length") or 0)
+        free = shutil.disk_usage(folder).free - UPLOAD_RESERVE
+        if free < expected:
+            shutil.rmtree(folder, ignore_errors=True)
+            raise HTTPException(507, "no_space")
+        written = 0
+        try:
+            with open(target, "wb") as handle:
+                async for chunk in request.stream():
+                    written += len(chunk)
+                    if written > free:
+                        raise HTTPException(507, "no_space")
+                    await asyncio.to_thread(handle.write, chunk)
+        except BaseException:
+            shutil.rmtree(folder, ignore_errors=True)
+            raise
+        entry = await asyncio.to_thread(convert.describe, target)
+        if entry["error"]:
+            shutil.rmtree(folder, ignore_errors=True)
+        return entry
+
+    @app.post("/api/convert")
+    async def start_convert(body: ConvertRequest) -> dict[str, list[str]]:
+        def run() -> list[str]:
+            folder = convert.output_folder(body.folder) if body.folder else None
+            entries = []
+            for raw in body.files:
+                entry = convert.describe(Path(raw).expanduser())
+                if entry["error"]:
+                    raise JobError(entry["error"])
+                entries.append(entry)
+            return converter.add(entries, body.target, folder)
+
+        try:
+            return {"items": await asyncio.to_thread(run)}
+        except JobError as exc:
+            raise convert_error(exc) from exc
+
+    @app.post("/api/convert/discard")
+    async def discard_uploads(body: PathsRequest) -> dict[str, int]:
+        return {"removed": await asyncio.to_thread(converter.discard, body.paths)}
+
+    @app.post("/api/convert/clear")
+    async def clear_converted() -> dict[str, int]:
+        return {"removed": converter.clear()}
+
+    @app.post("/api/convert/{item_id}/cancel")
+    async def cancel_convert(item_id: str) -> dict[str, bool]:
+        return {"ok": converter.cancel(item_id)}
+
+    @app.post("/api/convert/{item_id}/retry")
+    async def retry_convert(item_id: str) -> dict[str, str]:
+        try:
+            return {"item": await asyncio.to_thread(converter.retry, item_id)}
+        except JobError as exc:
+            raise convert_error(exc) from exc
+
+    @app.post("/api/convert/{item_id}/reveal")
+    async def reveal_converted(item_id: str) -> dict[str, bool]:
+        item = converter.find(item_id)
+        if item is None:
+            raise HTTPException(404, "convert_not_found")
+        target = Path(item["output"]) if item["output"] else Path(item["folder"])
+        if not target.exists():
+            raise HTTPException(404, "path_not_found")
+        try:
+            fileops.reveal(target)
+        except OSError as exc:
+            raise HTTPException(500, "open_failed") from exc
+        return {"ok": True}
+
+    @app.post("/api/codecs/install")
+    async def install_codecs() -> dict[str, bool]:
+        if not codecs.build():
+            raise HTTPException(501, "codecs_unsupported")
+        return {"ok": converter.install_codecs()}
+
+    @app.post("/api/codecs/cancel")
+    async def cancel_codecs() -> dict[str, bool]:
+        return {"ok": converter.cancel_codecs()}
+
+    @app.delete("/api/codecs")
+    async def remove_codecs() -> dict[str, bool]:
+        if converter.busy():
+            raise HTTPException(409, "busy")
+        try:
+            removed = await asyncio.to_thread(codecs.remove)
+        except JobError as exc:
+            raise HTTPException(409, exc.code) from exc
+        await asyncio.to_thread(convert.capabilities, True)
+        bus.emit({"type": "codecs", "job": dict(converter.codecs_job), "status": codecs.status()})
+        return {"ok": removed}
 
     return app

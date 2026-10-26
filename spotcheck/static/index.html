@@ -15,6 +15,10 @@
       <svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="9" fill="#22262c" stroke="rgba(255,255,255,.08)"/><path d="M7 13v6M11 9.5v13M15 13.5v5" stroke="#9aa0a9" stroke-width="2.2" stroke-linecap="round"/><path d="M17 17.5l3.5 3.5 6.5-8.5" fill="none" stroke="#ff9328" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
       <span class="word">Spot<b>Check</b></span>
     </div>
+    <div class="app-tabs" role="tablist" data-i18n-aria="tabs.label">
+      <button class="app-tab on" type="button" role="tab" id="tab-library" data-app-tab="library" aria-selected="true" aria-controls="library-view"><svg class="icon sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg><span data-i18n="tabs.library">Library</span></button>
+      <button class="app-tab" type="button" role="tab" id="tab-convert" data-app-tab="convert" aria-selected="false" aria-controls="converter" tabindex="-1"><svg class="icon sm" viewBox="0 0 24 24" aria-hidden="true"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg><span data-i18n="tabs.convert">Converter</span></button>
+    </div>
     <button class="project-switch" id="btn-project" type="button" data-i18n-title="project.switchTitle">
       <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
       <span class="text"><span class="caption" data-i18n="project.label">Project</span><span class="name" id="project-name">–</span></span>
@@ -39,13 +43,13 @@
   <div class="statusline" id="statusline" role="status" aria-live="polite"></div>
   <div class="banner" id="banner" role="alert"></div>
 
-  <div class="shell">
+  <div class="shell" id="library-view" role="tabpanel" aria-labelledby="tab-library">
     <nav class="panel playlists" data-i18n-aria="app.playlists">
       <div class="panel-head">
         <h2 class="label" data-i18n="app.playlists">Playlists</h2>
         <button class="icon-btn" type="button" data-action="sync" data-i18n-title="action.syncAll" data-i18n-aria="action.syncAll"><svg class="icon sm" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg></button>
       </div>
-      <button class="btn primary add-pl" type="button" data-action="add"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span data-i18n="app.addPlaylist">Add playlist</span></button>
+      <button class="btn primary add-pl" type="button" data-action="add"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span data-i18n="app.addPlaylist">Add playlist or song</span></button>
       <div class="pl-list" id="playlists"></div>
     </nav>
 
@@ -61,13 +65,14 @@
       </section>
     </aside>
   </div>
+  <div class="convert-shell" id="converter" role="tabpanel" aria-labelledby="tab-convert" hidden></div>
 </div>
 
 <div class="scrim" id="scrim"></div>
 <aside class="drawer" id="drawer" data-i18n-aria="drawer.label"></aside>
 
 <dialog id="dlg-add" aria-labelledby="dlg-add-title">
-  <div class="dlg-head"><h2 id="dlg-add-title" data-i18n="add.title">Add playlist</h2><button class="icon-btn" type="button" data-close data-i18n-aria="app.close"><svg class="icon" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+  <div class="dlg-head"><h2 id="dlg-add-title" data-i18n="add.title">Add playlist or song</h2><button class="icon-btn" type="button" data-close data-i18n-aria="app.close"><svg class="icon" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
   <div class="dlg-body">
     <p class="page-intro" data-i18n="add.text">Paste links to Spotify playlists or albums, one per line.</p>
     <label class="sr-only" for="add-urls" data-i18n="add.label">Links</label>
@@ -171,5 +176,6 @@
 
 <script src="/static/i18n.js"></script>
 <script src="/static/app.js"></script>
+<script src="/static/convert.js"></script>
 </body>
 </html>

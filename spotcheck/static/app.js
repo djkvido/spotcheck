@@ -163,11 +163,12 @@ const state = {
   projects: { list: [], current: null, view: null, picker: false, imported: null, musicTouched: false, errors: {} },
   helpTopic: "start",
   view: "playlists",
+  app: "library",
   finding: "",
   plSort: "name",
 };
 
-const VIEW_KEYS = ["selected", "view", "filter", "finding", "sort", "plSort"];
+const VIEW_KEYS = ["selected", "view", "filter", "finding", "sort", "plSort", "app"];
 function restoreView() {
   try {
     const saved = JSON.parse(localStorage.getItem("spotcheck-view") || "{}");
@@ -1221,7 +1222,7 @@ document.addEventListener("keydown", (event) => {
 });
 document.addEventListener("keydown", (event) => {
   const typing = /^(input|textarea|select)$/i.test(document.activeElement.tagName);
-  if (event.key === "/" && !typing && !document.querySelector("dialog[open]")) { event.preventDefault(); $("#search").focus(); }
+  if (event.key === "/" && !typing && state.app !== "convert" && !document.querySelector("dialog[open]")) { event.preventDefault(); $("#search").focus(); }
   if (event.key === "Escape" && state.openKey && !document.querySelector("dialog[open]")) closeDrawer();
 });
 window.addEventListener("hashchange", () => {
@@ -1249,6 +1250,7 @@ $("#btn-lang").addEventListener("click", () => {
   if ($("#dlg-terms").open) updateTermsLink();
   delete $("#drawer").dataset.key;
   renderAll();
+  if (cv.loaded) cvRender();
 });
 $("#sysinfo").addEventListener("click", () => openSettings("deps"));
 document.addEventListener("error", (event) => {
@@ -1630,7 +1632,7 @@ function depsPageHtml() {
         <span class="pill ${cls}">${escapeHtml(status)}</span></div>`;
     }).join("");
     const links = deps.links.map((l) => `<a href="${escapeHtml(safeHref(l.url))}" target="_blank" rel="noopener"><b>${escapeHtml(l.name)}</b><span>${te(`linkInfo.${l.id}`)}</span></a>`).join("");
-    body = `<div class="group"><div class="g-head">${te("deps.components")}</div><div class="g-body">${rows}</div></div>
+    body = `<div class="group"><div class="g-head">${te("deps.components")}</div><div class="g-body">${rows}${codecsRowHtml(deps.codecs)}</div></div>
       <div class="page-actions">
         <button class="btn" type="button" data-install="update-python">${icon("download", "sm")}${te(deps.packaged ? "deps.updateYtdlp" : "deps.updatePython")}</button>
         ${deps.packaged ? "" : `<button class="btn" type="button" data-install="ffmpeg">${te("deps.installFfmpeg")}</button>
@@ -1639,6 +1641,17 @@ function depsPageHtml() {
       <div class="group" style="margin-top:16px"><div class="g-head">${te("deps.links")}</div><div class="g-body links-list">${links}</div></div>`;
   }
   return `<h3 class="page-title">${te("tab.deps")}</h3><p class="page-intro">${te("tab.deps.intro")}</p>${body}`;
+}
+
+function codecsRowHtml(c) {
+  if (!c || !c.available) return "";
+  const running = cv.data?.codecs?.job?.state === "running";
+  const action = c.installed
+    ? `<button class="btn sm danger" type="button" data-codecs="remove" ${running ? "disabled" : ""}>${te("convert.codecs.remove")}</button>`
+    : `<button class="btn sm" type="button" data-codecs="install" ${running ? "disabled" : ""}>${icon("download", "sm")}${te("convert.codecs.download")}</button>`;
+  return `<div class="dep"><div><b>${te("convert.codecs.name")}</b><div class="why">${te("convert.codecs.why", { provider: c.provider, license: c.license })}</div>
+      ${c.folder ? `<span class="path">${escapeHtml(c.folder)}</span>` : ""}</div>
+    <span class="ver">${escapeHtml(c.installed ? c.version : fmtBytes(c.size))}</span>${action}</div>`;
 }
 
 function aboutPageHtml() {
@@ -1739,6 +1752,12 @@ async function runDiagnostics(button) {
 $("#settings-page").addEventListener("click", async (event) => {
   const diagnostics = event.target.closest("[data-diagnostics]");
   if (diagnostics) { await runDiagnostics(diagnostics); return; }
+  const codecsButton = event.target.closest("[data-codecs]");
+  if (codecsButton) {
+    if (codecsButton.dataset.codecs === "remove") await cvRemoveCodecs(); else await cvInstallCodecs();
+    loadDeps();
+    return;
+  }
   const install = event.target.closest("[data-install]");
   if (!install) return;
   const action = install.dataset.install;
@@ -2095,6 +2114,12 @@ function connectEvents() {
       case "settings":
         state.library.settings = event.settings;
         scheduleRender();
+        break;
+      case "convert":
+      case "convert_list":
+      case "codecs":
+        cvOnEvent(event);
+        if (event.type === "codecs" && $("#dlg-settings").open && state.settings.page === "deps") loadDeps();
         break;
       default:
         break;

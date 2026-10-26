@@ -6,7 +6,7 @@ import time
 from . import fileops
 from .config import paths
 
-VERSION = "1"
+VERSION = "2"
 URLS = {
     "en": "https://github.com/djkvido/spotcheck/blob/main/TERMS.md",
     "cs": "https://github.com/djkvido/spotcheck/blob/main/TERMS.cs.md",
