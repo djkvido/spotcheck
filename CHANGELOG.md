@@ -4,6 +4,8 @@ Notable changes of each release. The format follows [Keep a Changelog](https://k
 
 ## Unreleased
 
+## 1.2.0 - 2026-10-26
+
 ### Added
 
 - A format converter in its own tab: audio and video files are converted on your computer into MP3, M4A, Opus, OGG, FLAC, ALAC, WAV, AIFF, WMA, AC-3, MP4 (H.264, H.265, AV1), WebM (VP9, AV1), MKV, MOV (H.264, ProRes), AVI, WMV or GIF, or into any other format FFmpeg can write. The sound of a video can be saved on its own, and MKV and MP4 can be rewrapped without re-encoding.
