@@ -16,6 +16,10 @@ Notable changes of each release. The format follows [Keep a Changelog](https://k
 - Adding a single song is easier to find: the button and the dialog are now called Add playlist or song, and the texts explain that single songs are collected in the Singles list.
 - The Terms of Use (version 2) mention the converter and the download of its extended codecs, so they are shown once more for agreement.
 
+### Security
+
+- The installers include brotli 1.2.1, which fixes a known vulnerability.
+
 ## 1.1.1 - 2026-10-22
 
 ### Changed
