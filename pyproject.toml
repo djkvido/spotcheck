@@ -33,7 +33,7 @@ dependencies = [
     "spotipy>=2.26,<3",
     "spotipyfree>=1.9.14,<2",
     "syncedlyrics>=1.0.1,<2",
-    "websockets~=14.1",
+    "websockets~=16.1",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
