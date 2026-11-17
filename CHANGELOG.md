@@ -4,6 +4,8 @@ Notable changes of each release. The format follows [Keep a Changelog](https://k
 
 ## Unreleased
 
+## 1.2.1 - 2026-11-17
+
 ### Fixed
 
 - When YouTube or another site temporarily asks to confirm that the request is not a bot or reports too many requests, loading a song or playlist, downloading it (also through spotDL) and downloading a reference for verification are tried again after a short pause instead of failing at once. While a site keeps refusing, the next tracks are not retried again and again, and the log explains it once and suggests updating yt-dlp.
