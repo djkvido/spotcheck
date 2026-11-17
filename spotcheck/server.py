@@ -292,10 +292,21 @@ def create_app(automation: bool = True) -> FastAPI:
     def lib() -> Library:
         return engine.lib
 
+    updates: dict[str, Any] = {"ytdlp": None}
+
+    def check_ytdlp() -> None:
+        try:
+            updates["ytdlp"] = deps.ytdlp_latest()
+        except Exception:
+            updates["ytdlp"] = None
+        bus.emit({"type": "updates", "ytdlp": deps.ytdlp_update(updates["ytdlp"])})
+
     @asynccontextmanager
     async def lifespan(_: FastAPI):
         bus.loop = asyncio.get_running_loop()
         await asyncio.to_thread(convert.clean_inbox)
+        if automation and terms.accepted():
+            threading.Thread(target=check_ytdlp, name="spotcheck-updates", daemon=True).start()
         await asyncio.to_thread(lib().link_files)
         if automation:
             engine.start_automation()
@@ -366,6 +377,7 @@ def create_app(automation: bool = True) -> FastAPI:
             "jobs": engine.jobs_public(),
             "logs": list(bus.logs)[-150:],
             "ffmpeg": analysis.ffmpeg_info(),
+            "ytdlp_update": deps.ytdlp_update(updates["ytdlp"]),
             "version": __version__,
             "terms": terms.public(),
         }
@@ -380,6 +392,8 @@ def create_app(automation: bool = True) -> FastAPI:
             raise HTTPException(409, "terms_outdated")
         terms.accept()
         engine.rescan_soon()
+        if automation:
+            threading.Thread(target=check_ytdlp, name="spotcheck-updates", daemon=True).start()
         return terms.public()
 
     @app.post("/api/quit")
@@ -487,6 +501,13 @@ def create_app(automation: bool = True) -> FastAPI:
 
     @app.post("/api/deps/install")
     async def install(body: InstallRequest) -> dict[str, str]:
+        with engine.lock:
+            pending = next(
+                (j["id"] for j in engine.jobs.values() if j["kind"] == "deps" and j["state"] in ("queued", "running")),
+                None,
+            )
+        if pending:
+            return {"job": pending}
         return {"job": engine.submit("deps", "deps", {"action": body.action}, action=body.action)}
 
     @app.post("/api/playlists")
@@ -494,6 +515,20 @@ def create_app(automation: bool = True) -> FastAPI:
         urls, rejected = split_urls(body.urls)
         if not urls:
             raise HTTPException(400, "invalid_playlist_url")
+        with engine.lock:
+            pending = next(
+                (
+                    j["id"]
+                    for j in engine.jobs.values()
+                    if j["kind"] == "sync"
+                    and j["state"] in ("queued", "running")
+                    and j["_params"].get("urls") == urls
+                    and j["_params"].get("follow_up") == body.follow_up
+                ),
+                None,
+            )
+        if pending:
+            return {"job": pending, "rejected": rejected}
         job = engine.submit("sync", "sync", {"count": len(urls)}, urls=urls, follow_up=body.follow_up)
         return {"job": job, "rejected": rejected}
 

@@ -1011,6 +1011,11 @@ const MESSAGES = {
     "error.empty_output": "FFmpeg produced an empty file; nothing was saved.",
     "error.path_not_absolute": "Only full paths to files can be converted.",
     "error.copy_incompatible": "The streams cannot be copied into this container without re-encoding. Choose MKV or a format that re-encodes.",
+    "log.youtube_blocked": "The site is temporarily refusing requests (a bot check or too many requests), so {url} could not be loaded even after three tries. Wait a few minutes and try again. If it keeps happening, update yt-dlp in Settings › Dependencies.",
+    "log.ytdlp_forbidden": "The site refused the download of {url}. This usually means yt-dlp is outdated or Deno is missing; update yt-dlp in Settings › Dependencies. {detail}",
+    "log.ytdlp_track_empty": "yt-dlp found no playable song at this link. {detail}",
+    "banner.ytdlpUpdate": "A newer yt-dlp is available ({current} → {latest}). YouTube changes often and an outdated yt-dlp is the most common reason why songs cannot be loaded or downloaded.",
+    "banner.ytdlpUpdateButton": "Update yt-dlp",
   },
 
   cs: {
@@ -2023,6 +2028,11 @@ const MESSAGES = {
     "error.empty_output": "FFmpeg vytvořil prázdný soubor, nic se neuložilo.",
     "error.path_not_absolute": "Převést jde jen soubor zadaný celou cestou.",
     "error.copy_incompatible": "Stopy nejde do tohoto kontejneru zkopírovat bez překódování. Vyber MKV nebo formát, který překóduje.",
+    "log.youtube_blocked": "Služba dočasně odmítá požadavky (ověření, že nejde o robota, nebo příliš mnoho požadavků), takže {url} se nepodařilo načíst ani na třetí pokus. Počkej pár minut a zkus to znovu. Pokud se to opakuje, aktualizuj yt-dlp v Nastavení › Závislosti.",
+    "log.ytdlp_forbidden": "Služba odmítla stažení {url}. Obvykle to znamená zastaralé yt-dlp nebo chybějící Deno; aktualizuj yt-dlp v Nastavení › Závislosti. {detail}",
+    "log.ytdlp_track_empty": "yt-dlp na tomto odkazu nenašel žádnou přehratelnou skladbu. {detail}",
+    "banner.ytdlpUpdate": "Je dostupná novější verze yt-dlp ({current} → {latest}). YouTube se často mění a zastaralé yt-dlp je nejčastější důvod, proč skladby nejde načíst nebo stáhnout.",
+    "banner.ytdlpUpdateButton": "Aktualizovat yt-dlp",
   },
 };
 

@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from conftest import make_song
 
-from spotcheck import deps, diagnostics, origins, runtime
+from spotcheck import analysis, deps, diagnostics, origins, runtime
 from spotcheck.engine import Bus, Engine
 from spotcheck.library import Library
 
@@ -115,19 +115,29 @@ def test_a_spotdl_timeout_is_reported(engine, monkeypatch):
 def test_ytdlp_failures_are_reported_to_the_caller(monkeypatch):
     seen = []
     url = "https://www.youtube.com/playlist?list=PLx"
-    monkeypatch.setattr(origins.analysis, "run_text", lambda *a, **k: completed(1, "", "ERROR: Sign in to confirm"))
+    calls = []
+    monkeypatch.setattr(analysis, "pause", lambda seconds: None)
+
+    def bot_check(*a, **k):
+        calls.append(a)
+        return completed(1, "", "ERROR: Sign in to confirm you're not a bot")
+
+    monkeypatch.setattr(analysis, "run_text", bot_check)
     assert origins.load(url, ["yt-dlp"], on_error=lambda code, detail: seen.append((code, detail))) == (None, [], 0)
-    assert seen[0][0] == "ytdlp_failed" and "Sign in" in seen[0][1]
+    assert seen[0][0] == "youtube_blocked" and "Sign in" in seen[0][1] and len(calls) == 3
 
     seen.clear()
-    monkeypatch.setattr(origins.analysis, "run_text", lambda *a, **k: completed(0, "not json", ""))
+    monkeypatch.setattr(analysis, "run_text", lambda *a, **k: completed(1, "", "ERROR: Unsupported URL"))
+    origins.load(url, ["yt-dlp"], on_error=lambda code, detail: seen.append((code, detail)))
+    assert seen[0][0] == "ytdlp_failed"
+
+    seen.clear()
+    monkeypatch.setattr(analysis, "run_text", lambda *a, **k: completed(0, "not json", ""))
     origins.load(url, ["yt-dlp"], on_error=lambda code, detail: seen.append(code))
     assert seen == ["ytdlp_bad_output"]
 
     seen.clear()
-    monkeypatch.setattr(
-        origins.analysis, "run_text", lambda *a, **k: completed(0, '{"title": "x", "entries": []}', "warning")
-    )
+    monkeypatch.setattr(analysis, "run_text", lambda *a, **k: completed(0, '{"title": "x", "entries": []}', "warning"))
     origins.load(url, ["yt-dlp"], on_error=lambda code, detail: seen.append(code))
     assert seen == ["ytdlp_empty"]
 

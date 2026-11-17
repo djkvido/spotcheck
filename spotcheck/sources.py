@@ -17,7 +17,7 @@ from typing import Any
 import yt_dlp
 from rapidfuzz import fuzz
 
-from . import __version__, analysis, fileops
+from . import __version__, analysis, fileops, ytdlp
 from .config import paths
 
 log = logging.getLogger(__name__)
@@ -458,7 +458,7 @@ def fetch_candidate(cand: dict, ytdlp_cmd: list[str]) -> Path | None:
         cand["url"],
     ]
     try:
-        analysis.run_bin(cmd, timeout=240)
+        ytdlp.run(cmd, 240, lambda res: cached_candidate(cand["id"]) is not None)
     except (OSError, subprocess.SubprocessError):
         return None
     return cached_candidate(cand["id"])

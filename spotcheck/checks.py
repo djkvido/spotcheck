@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import concurrent.futures as cf
+import os
 from pathlib import Path
 from typing import Any
 
@@ -10,6 +12,7 @@ UPSCALE_BITRATE = 192
 UPSCALE_CUTOFF = 16.5
 CLIPPING_PEAK = 1.0
 QUIET_LUFS = -24.0
+ANALYSIS = cf.ThreadPoolExecutor(max_workers=max(8, os.cpu_count() or 8), thread_name_prefix="spotcheck-job-check")
 
 
 class Checks:
@@ -27,17 +30,24 @@ class Checks:
         return cached
 
     def do_check(self, tr: dict, path: Path) -> dict:
-        errors, decoded = analysis.decode_check(path)
-        header_length = analysis.duration(path)
-        length = decoded or header_length
-        lead, tail = analysis.silence_edges(path, length)
-        volume = analysis.head_volume(path)
-        gap = analysis.head_gap(path, lead)
-        bitrate = analysis.bitrate_kbps(path)
-        codec = analysis.codec_name(path)
-        measured, cutoff = analysis.cutoff_khz(path, length)
-        level = analysis.loudness(path) or {}
-        missing_tags = tags.missing(path) or []
+        pending = [ANALYSIS.submit(analysis.loudness, path), ANALYSIS.submit(analysis.head_volume, path)]
+        try:
+            errors, decoded = analysis.decode_check(path)
+            header_length = analysis.duration(path)
+            length = decoded or header_length
+            pending.append(ANALYSIS.submit(analysis.cutoff_khz, path, length))
+            lead, tail = analysis.silence_edges(path, length)
+            gap = analysis.head_gap(path, lead)
+            bitrate = analysis.bitrate_kbps(path)
+            codec = analysis.codec_name(path)
+            missing_tags = tags.missing(path) or []
+            loudness, start, spectrum = pending
+            measured, cutoff = spectrum.result()
+            level = loudness.result() or {}
+            volume = start.result()
+        finally:
+            for future in pending:
+                future.cancel()
         expected = float(tr["duration"])
         diff = length - expected
         extra = diff - lead - tail

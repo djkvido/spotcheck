@@ -8,7 +8,7 @@ import time
 import uuid
 from pathlib import Path
 
-from . import analysis, deps, sources, tags
+from . import analysis, deps, origins, sources, tags, ytdlp
 from .config import paths
 from .errors import Cancelled
 from .library import AUDIO_SUFFIXES, base_name, folder_name
@@ -19,7 +19,7 @@ YTDLP_FORMATS = {"opus": "bestaudio[acodec=opus]/bestaudio", "m4a": "bestaudio[e
 class Acquiring:
     @staticmethod
     def ytdlp_cmd() -> list[str]:
-        cmd = [*deps.YTDLP_CMD, "--ignore-config"]
+        cmd = [*deps.YTDLP_CMD, "--ignore-config", *ytdlp.NETWORK]
         deno = deps.deno_path()
         if deno:
             cmd += ["--js-runtimes", f"deno:{deno}"]
@@ -55,15 +55,33 @@ class Acquiring:
         ]
         if analysis.ffmpeg_path():
             cmd += ["--ffmpeg", analysis.ffmpeg_path()]
+        result = None
         try:
-            analysis.run_text(cmd, timeout=480, cwd=str(work))
+            result = ytdlp.run(cmd, 480, lambda res: bool(self._produced(work)), cwd=str(work), text=ytdlp.error_lines)
         except (OSError, subprocess.SubprocessError) as exc:
             self.bus.log("warn", "spotdl_error", tr["id"], error=str(exc))
-        produced = [p for p in work.iterdir() if p.suffix.lower() in AUDIO_SUFFIXES]
+        produced = self._produced(work)
         if not produced:
+            self._report_refusal(tr, result, tr.get("url") or "", ytdlp.error_lines(result))
             shutil.rmtree(work, ignore_errors=True)
             return None
         return produced[0]
+
+    @staticmethod
+    def _produced(work: Path) -> list[Path]:
+        return [p for p in work.iterdir() if p.suffix.lower() in AUDIO_SUFFIXES]
+
+    def _report_refusal(
+        self, tr: dict, result: subprocess.CompletedProcess | None, url: str, text: str | None = None
+    ) -> None:
+        if result is None:
+            return
+        text = ytdlp.output(result) if text is None else text
+        code = origins.refusal(result, text)
+        if code == "youtube_blocked" and not ytdlp.should_report():
+            return
+        if code:
+            self.bus.log("warn", code, tr["id"], url=url, detail=text.strip()[-300:])
 
     @staticmethod
     def default_via(tr: dict) -> str:
@@ -90,12 +108,17 @@ class Acquiring:
             cmd += ["--audio-quality", st["mp3_bitrate"].upper()]
         template = str(work / f"{stem.replace('%', '%%')}.%(ext)s")
         cmd += ["--ffmpeg-location", analysis.ffmpeg(), "-o", template, "--", url]
+        result = None
         try:
-            analysis.run_text(cmd, timeout=480, cwd=str(work))
+            result = ytdlp.run(cmd, 480, lambda res: bool(self._produced(work)), cwd=str(work))
         except (OSError, subprocess.SubprocessError) as exc:
             self.bus.log("warn", "download_error", tr["id"], error=str(exc))
-        produced = [p for p in work.iterdir() if p.suffix.lower() in AUDIO_SUFFIXES]
+        produced = self._produced(work)
         if not produced:
+            if result is not None and origins.refusal(result):
+                self._report_refusal(tr, result, url)
+            elif result is not None and (result.stderr or "").strip():
+                self.bus.log("warn", "download_error", tr["id"], error=result.stderr.strip().splitlines()[-1][:300])
             shutil.rmtree(work, ignore_errors=True)
             return None
         path = produced[0]

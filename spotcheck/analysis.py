@@ -34,6 +34,8 @@ _cache: dict[str, Any] = {}
 _active: set[subprocess.Popen] = set()
 _stopped: set[subprocess.Popen] = set()
 _active_lock = threading.Lock()
+_stop_signal = threading.Condition()
+_stops = [0]
 
 
 class ProcessStopped(Cancelled):
@@ -132,9 +134,21 @@ def stop_all(jobs_only: bool = False) -> int:
     with _active_lock:
         running = [p for p in _active if p.poll() is None and (p.job or not jobs_only)]
         _stopped.update(running)
+    with _stop_signal:
+        _stops[0] += 1
+        _stop_signal.notify_all()
     for proc in running:
         kill_tree(proc)
     return len(running)
+
+
+def pause(seconds: float) -> None:
+    with _stop_signal:
+        start = _stops[0]
+        _stop_signal.wait_for(lambda: _stops[0] != start, timeout=seconds)
+        stopped = _stops[0] != start
+    if stopped and threading.current_thread().name.startswith(JOB_THREADS):
+        raise ProcessStopped("pause")
 
 
 def _run(cmd: list[str], timeout: float | None, cwd: str | None, text: bool) -> subprocess.CompletedProcess:

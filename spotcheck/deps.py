@@ -74,6 +74,21 @@ def _pypi_latest(package: str) -> str | None:
     return version
 
 
+def version_key(version: str | None) -> tuple[int, ...]:
+    return tuple(int(part) for part in re.findall(r"\d+", version or ""))
+
+
+def ytdlp_latest() -> str | None:
+    return _pypi_latest("yt-dlp") if _installed_version("yt-dlp") else None
+
+
+def ytdlp_update(latest: str | None) -> dict[str, Any] | None:
+    current = _installed_version("yt-dlp")
+    if not current or not latest or version_key(latest) <= version_key(current):
+        return None
+    return {"current": current, "latest": latest, "packaged": runtime.packaged()}
+
+
 def deno_path() -> str | None:
     exe = "deno.exe" if os.name == "nt" else "deno"
     for candidate in (shutil.which("deno"), str(Path.home() / ".spotdl" / exe)):

@@ -10,7 +10,7 @@ from typing import Any
 
 from rapidfuzz import fuzz
 
-from . import analysis, sources
+from . import sources, ytdlp
 
 SPOTIFY = re.compile(r"^https://open\.spotify\.com/(?:intl-[a-z]+/)?(?:playlist|album)/([A-Za-z0-9]+)")
 YOUTUBE = re.compile(
@@ -232,6 +232,15 @@ def is_snippet(entry: dict) -> bool:
     return "/preview/" in url.path or ((entry.get("duration") or 0) == 30.0 and soundcloud_cdn)
 
 
+def refusal(result: subprocess.CompletedProcess, text: str | None = None) -> str | None:
+    text = ytdlp.output(result) if text is None else text
+    if ytdlp.blocked(text):
+        return "youtube_blocked"
+    if ytdlp.forbidden(text):
+        return "ytdlp_forbidden"
+    return None
+
+
 def load_track(
     url: str,
     ytdlp_cmd: list[str],
@@ -246,13 +255,19 @@ def load_track(
         return []
 
     try:
-        r = analysis.run_text([*ytdlp_cmd, "-J", "--no-warnings", "--no-playlist", "--", url], timeout=timeout)
+        r = ytdlp.run(
+            [*ytdlp_cmd, "-J", "--no-warnings", "--no-playlist", "--", url],
+            timeout,
+            lambda res: res.returncode == 0 and res.stdout.strip() not in ("", "null"),
+        )
     except subprocess.TimeoutExpired:
         return fail("ytdlp_timeout", f"{timeout:.0f} s")
     except (OSError, subprocess.SubprocessError) as exc:
         return fail("ytdlp_error", str(exc))
-    if not r.stdout.strip():
-        return fail("ytdlp_failed", r.stderr or f"exit code {r.returncode}")
+    if not r.stdout.strip() or r.returncode != 0:
+        failure = refusal(r)
+        if failure or not r.stdout.strip():
+            return fail(failure or "ytdlp_failed", r.stderr or f"exit code {r.returncode}")
     try:
         info = json.loads(r.stdout)
     except ValueError:
@@ -260,11 +275,11 @@ def load_track(
     if isinstance(info, dict) and info.get("entries"):
         info = next((e for e in info["entries"] if e), None)
     if not isinstance(info, dict) or not info.get("id") or (origin == "soundcloud" and is_snippet(info)):
-        return fail("ytdlp_empty", r.stderr)
+        return fail("ytdlp_track_empty", r.stderr)
     artist, title = parse_entry(info)
     official = identify(artist, title, float(info.get("duration") or 0))
     song = entry_song(info, origin, SINGLES_NAME, 1, official)
-    return [song] if song else fail("ytdlp_empty", r.stderr)
+    return [song] if song else fail("ytdlp_track_empty", r.stderr)
 
 
 def load(
@@ -284,19 +299,19 @@ def load(
         return None, [], 0
 
     try:
-        r = analysis.run_text([*cmd, "--", url], timeout=timeout)
+        r = ytdlp.run([*cmd, "--", url], timeout, lambda res: res.stdout.strip() not in ("", "null"))
     except subprocess.TimeoutExpired:
         return fail("ytdlp_timeout", f"{timeout:.0f} s")
     except (OSError, subprocess.SubprocessError) as exc:
         return fail("ytdlp_error", str(exc))
     if not r.stdout.strip():
-        return fail("ytdlp_failed", r.stderr or f"exit code {r.returncode}")
+        return fail(refusal(r) or "ytdlp_failed", r.stderr or f"exit code {r.returncode}")
     try:
         info = json.loads(r.stdout)
     except ValueError:
         return fail("ytdlp_bad_output", r.stdout[-400:])
     if not isinstance(info, dict) or not info.get("entries"):
-        return fail("ytdlp_empty", r.stderr)
+        return fail(refusal(r) or "ytdlp_empty", r.stderr)
     name = re.sub(r"^Album - ", "", info.get("title") or "") or "Playlist"
     songs, unavailable = [], 0
     for position, entry in enumerate(info["entries"], 1):

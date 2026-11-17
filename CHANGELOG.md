@@ -4,6 +4,22 @@ Notable changes of each release. The format follows [Keep a Changelog](https://k
 
 ## Unreleased
 
+### Fixed
+
+- When YouTube or another site temporarily asks to confirm that the request is not a bot or reports too many requests, loading a song or playlist, downloading it (also through spotDL) and downloading a reference for verification are tried again after a short pause instead of failing at once. While a site keeps refusing, the next tracks are not retried again and again, and the log explains it once and suggests updating yt-dlp.
+- A download refused by the site (HTTP 403 or a missing format) is reported as such, with a hint to update yt-dlp, instead of failing silently.
+- A playlist in which a single entry fails still loads with all its other tracks.
+- Cancelling a job also stops it while it waits between tries.
+- Stalled connections are given up after 30 seconds and retried, instead of waiting for the full download timeout.
+- A single song that cannot be loaded is no longer reported as an empty playlist.
+- Clicking Load several times no longer queues the same link more than once.
+
+### Changed
+
+- Checking a file is about three times faster: its independent measurements run at the same time.
+- A banner offers to update yt-dlp when a newer version is available, since an outdated yt-dlp is the most common reason why YouTube songs cannot be loaded. The update starts only after you confirm it.
+- The installers include yt-dlp 2026.10.26.
+
 ## 1.2.0 - 2026-10-26
 
 ### Added

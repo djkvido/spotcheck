@@ -1,6 +1,13 @@
 import pytest
 
-from spotcheck import config
+from spotcheck import config, ytdlp
+
+
+@pytest.fixture(autouse=True)
+def fresh_ytdlp_state():
+    ytdlp.reset()
+    yield
+    ytdlp.reset()
 
 
 @pytest.fixture()

@@ -369,8 +369,14 @@ function renderBanner() {
   if (ff && !ff.found) key = "banner.noFfmpeg";
   else if (ff && !ff.chromaprint) key = "banner.noChromaprint";
   const banner = $("#banner");
-  banner.innerHTML = key ? `<span>${te(key)}</span><span class="spacer"></span><button class="btn sm" type="button" data-action="deps">${te("banner.open")}</button>` : "";
-  banner.classList.toggle("show", Boolean(key));
+  const update = state.ytdlpUpdate;
+  if (!key && update) {
+    const installing = Object.values(state.jobs).some((j) => j.kind === "deps" && !TERMINAL.has(j.state));
+    banner.innerHTML = `<span>${te("banner.ytdlpUpdate", { current: update.current, latest: update.latest })}</span><span class="spacer"></span><button class="btn sm" type="button" data-action="update-ytdlp" ${installing ? "disabled" : ""}>${te("banner.ytdlpUpdateButton")}</button>`;
+  } else {
+    banner.innerHTML = key ? `<span>${te(key)}</span><span class="spacer"></span><button class="btn sm" type="button" data-action="deps">${te("banner.open")}</button>` : "";
+  }
+  banner.classList.toggle("show", Boolean(key || update));
 }
 
 function renderPlaylists() {
@@ -1100,6 +1106,15 @@ async function onAction(name, el) {
       case "add": openAddDialog(); break;
       case "sync": openSyncDialog(); break;
       case "deps": openSettings("deps"); break;
+      case "update-ytdlp": {
+        const source = state.ytdlpUpdate?.packaged === false ? "deps.source.python" : "deps.source.packaged";
+        const html = para(te(source)) + para(te("deps.confirmLicenses"));
+        if (!await confirmDialog(t("deps.confirmTitle"), html, t("deps.confirmOk"))) break;
+        el.disabled = true;
+        await api("/api/deps/install", "POST", { action: "update-python" });
+        say(t("toast.installing"));
+        break;
+      }
       case "close-drawer": closeDrawer(); break;
       case "export": openExportDialog(); break;
       case "fix-tags": await fixTags(el.dataset.scope, key); break;
@@ -1338,12 +1353,17 @@ function checkAddUrls() {
 }
 $("#add-urls").addEventListener("input", checkAddUrls);
 $("#add-submit").addEventListener("click", async () => {
+  const button = $("#add-submit");
+  if (button.disabled) return;
+  button.disabled = true;
   try {
     const result = await api("/api/playlists", "POST", { urls: $("#add-urls").value, follow_up: $("#add-follow").checked });
     $("#dlg-add").close();
     say(result.rejected.length ? t("toast.skipped", { n: result.rejected.length }) : t("toast.loading"));
   } catch (error) {
     sayError(error);
+  } finally {
+    checkAddUrls();
   }
 });
 
@@ -2051,6 +2071,7 @@ async function loadState() {
   state.library = data.library;
   state.meta = data.settings_meta;
   state.ffmpeg = data.ffmpeg;
+  state.ytdlpUpdate = data.ytdlp_update;
   state.version = data.version;
   state.terms = data.terms;
   state.logs = data.logs;
@@ -2069,6 +2090,7 @@ function onJobEvent(job) {
     state.lastJob = job;
     say(result.text, Boolean(result.error));
     if (job.kind === "deps" && $("#dlg-settings").open) loadDeps();
+    if (job.kind === "deps") reloadSoon();
   }
   scheduleRender();
 }
@@ -2110,6 +2132,10 @@ function connectEvents() {
         state.filter = "all";
         state.lastJob = null;
         reloadSoon();
+        break;
+      case "updates":
+        state.ytdlpUpdate = event.ytdlp;
+        renderBanner();
         break;
       case "settings":
         state.library.settings = event.settings;
