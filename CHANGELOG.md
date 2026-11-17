@@ -20,6 +20,10 @@ Notable changes of each release. The format follows [Keep a Changelog](https://k
 - A banner offers to update yt-dlp when a newer version is available, since an outdated yt-dlp is the most common reason why YouTube songs cannot be loaded. The update starts only after you confirm it.
 - The installers include yt-dlp 2026.10.26.
 
+### Security
+
+- The installers include dnspython 2.9.2, opentelemetry-api 1.45.2, pymongo 4.20.0 and soupsieve 4.1.1, which fix known vulnerabilities.
+
 ## 1.2.0 - 2026-10-26
 
 ### Added
