@@ -4,6 +4,8 @@ Notable changes of each release. The format follows [Keep a Changelog](https://k
 
 ## Unreleased
 
+## 1.2.3 - 2026-11-20
+
 ### Fixed
 
 - A correct track could be marked *Wrong* when Deezer offers another version of the same length, such as a piano version, as the official preview. The preview with the exact title is now preferred, and when a file does not match the preview, the next best previews are tried before the file counts as wrong. Tracks marked *Needs review* or *Wrong* by the earlier preview choice are checked again automatically.
