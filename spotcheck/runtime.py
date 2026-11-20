@@ -7,6 +7,7 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 APP_NAME = "SpotCheck"
+WINDOWS = os.name == "nt"
 SPOTDL_REQUIREMENT = "spotdl==4.5.2"
 
 _packaged = False
@@ -42,7 +43,7 @@ def packages_dir() -> Path:
 
 def python() -> str:
     executable = Path(sys.executable)
-    if os.name == "nt" and executable.name.lower() != "python.exe":
+    if WINDOWS and executable.name.lower() != "python.exe":
         console = executable.with_name("python.exe")
         if console.is_file():
             return str(console)

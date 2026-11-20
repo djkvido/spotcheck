@@ -34,7 +34,7 @@ def test_helper_programs_run_with_the_console_python(tmp_path, monkeypatch):
     launcher = tmp_path / "SpotCheck.exe"
     launcher.write_bytes(b"")
     monkeypatch.setattr(runtime.sys, "executable", str(launcher))
-    monkeypatch.setattr(runtime.os, "name", "nt")
+    monkeypatch.setattr(runtime, "WINDOWS", True)
     assert runtime.python() == str(launcher)
     (tmp_path / "python.exe").write_bytes(b"")
     assert runtime.python() == str(tmp_path / "python.exe")
