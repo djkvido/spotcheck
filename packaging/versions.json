@@ -61,7 +61,7 @@
     "version": "6.7.1"
   },
   "spotdl": {
-    "version": "4.5.2",
-    "sha256": "56d22b89aa85fb2c158a6794b0f42e413c73355b47e04930ded3fee82b767282"
+    "version": "4.6.0",
+    "sha256": "1b58d23446e2318c04f36bf7fa3da673afb9c38a333479a4be1b5859f7eb0cda"
   }
 }
