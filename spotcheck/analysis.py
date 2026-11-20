@@ -81,10 +81,18 @@ def ffmpeg_info(refresh: bool = False) -> dict[str, Any]:
     return _cache["info"]
 
 
+def hidden_window() -> subprocess.STARTUPINFO:
+    info = subprocess.STARTUPINFO()
+    info.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+    info.wShowWindow = 0
+    return info
+
+
 def _spawn(cmd: list[str], cwd: str | None, text: bool, merge: bool, env: dict | None = None) -> subprocess.Popen:
     options: dict[str, Any] = {"text": True, "encoding": "utf-8", "errors": "replace"} if text else {}
     if os.name == "nt":
         options["creationflags"] = CREATE_NO_WINDOW | NEW_PROCESS_GROUP
+        options["startupinfo"] = hidden_window()
     else:
         options["start_new_session"] = True
     proc = subprocess.Popen(

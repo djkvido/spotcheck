@@ -9,7 +9,6 @@ import queue
 import re
 import shutil
 import subprocess
-import sys
 import threading
 import time
 import uuid
@@ -17,7 +16,7 @@ from collections import deque
 from collections.abc import Callable
 from typing import Any
 
-from . import analysis, deps, diagnostics, fileops, origins, sources, terms
+from . import analysis, deps, diagnostics, fileops, origins, runtime, sources, terms
 from .acquire import Acquiring
 from .checks import Checks
 from .config import paths
@@ -569,7 +568,7 @@ class Engine(Checks, Acquiring, Placement, Organizing):
 
         try:
             result = analysis.run_streaming(
-                [sys.executable, "-m", "spotdl", "save", url, "--save-file", str(out), "--simple-tui"],
+                [runtime.python(), "-m", "spotdl", "save", url, "--save-file", str(out), "--simple-tui"],
                 progress,
                 timeout=SPOTDL_LOAD_TIMEOUT,
                 cwd=str(paths().tmp),

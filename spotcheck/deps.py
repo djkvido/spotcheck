@@ -18,7 +18,7 @@ from . import analysis, codecs, runtime
 
 LogFn = Callable[..., None]
 
-YTDLP_CMD = [sys.executable, "-m", "yt_dlp"]
+YTDLP_CMD = [runtime.python(), "-m", "yt_dlp"]
 PYTHON_PACKAGES = ("spotdl", "yt-dlp", "mutagen", "rapidfuzz")
 UPDATE_SPECS = ("yt-dlp[default]", "mutagen", "rapidfuzz")
 PACKAGED_UPDATES = ("yt-dlp", "yt-dlp-ejs")
@@ -162,9 +162,9 @@ def ensure_spotdl(log: LogFn) -> bool:
     if _installed_version("spotdl") == runtime.SPOTDL_REQUIREMENT.split("==")[1]:
         return True
     if any(True for _ in metadata.distributions(name="spotdl")):
-        _run([sys.executable, "-m", "pip", "uninstall", "--yes", "--quiet", "spotdl"], log)
+        _run([runtime.python(), "-m", "pip", "uninstall", "--yes", "--quiet", "spotdl"], log)
     target = str(runtime.spotdl_dir())
-    pip = [sys.executable, "-m", "pip", "install", "--quiet", "--no-deps", "--upgrade", "--target", target]
+    pip = [runtime.python(), "-m", "pip", "install", "--quiet", "--no-deps", "--upgrade", "--target", target]
     return _run([*pip, runtime.SPOTDL_REQUIREMENT], log)
 
 
@@ -173,10 +173,10 @@ def install(action: str, log: LogFn) -> bool:
     if action in ("update-python", "all"):
         if runtime.packaged():
             target = str(runtime.packages_dir())
-            pip = [sys.executable, "-m", "pip", "install", "--upgrade", "--no-deps", "--target", target]
+            pip = [runtime.python(), "-m", "pip", "install", "--upgrade", "--no-deps", "--target", target]
             ok &= _run([*pip, *PACKAGED_UPDATES], log)
         else:
-            ok &= _run([sys.executable, "-m", "pip", "install", "-U", *UPDATE_SPECS], log)
+            ok &= _run([runtime.python(), "-m", "pip", "install", "-U", *UPDATE_SPECS], log)
             ok &= ensure_spotdl(log)
     if runtime.packaged() and action in ("ffmpeg", "deno"):
         return ok
@@ -198,9 +198,9 @@ def install(action: str, log: LogFn) -> bool:
             if not analysis.ffmpeg_info(refresh=True)["found"]:
                 log("warn", "ffmpeg_not_on_path")
         else:
-            ok &= _run([sys.executable, "-m", "spotdl", "--download-ffmpeg"], log)
+            ok &= _run([runtime.python(), "-m", "spotdl", "--download-ffmpeg"], log)
             if not analysis.ffmpeg_info(refresh=True)["chromaprint"]:
                 log("warn", "ffmpeg_no_chromaprint")
     if action in ("deno", "all"):
-        ok &= _run([sys.executable, "-m", "spotdl", "--download-deno"], log)
+        ok &= _run([runtime.python(), "-m", "spotdl", "--download-deno"], log)
     return ok

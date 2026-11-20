@@ -40,6 +40,15 @@ def packages_dir() -> Path:
     return _packages or user_home() / "packages"
 
 
+def python() -> str:
+    executable = Path(sys.executable)
+    if os.name == "nt" and executable.name.lower() != "python.exe":
+        console = executable.with_name("python.exe")
+        if console.is_file():
+            return str(console)
+    return sys.executable
+
+
 def bundled_tools() -> Path | None:
     executable = Path(sys.executable).resolve()
     for parent in executable.parents[:3]:

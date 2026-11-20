@@ -3,12 +3,11 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
-import sys
 import time
 import uuid
 from pathlib import Path
 
-from . import analysis, deps, origins, sources, tags, ytdlp
+from . import analysis, deps, origins, runtime, sources, tags, ytdlp
 from .config import paths
 from .errors import Cancelled
 from .library import AUDIO_SUFFIXES, base_name, folder_name
@@ -34,7 +33,7 @@ class Acquiring:
         spec = work / "song.spotdl"
         spec.write_text(json.dumps([song], ensure_ascii=False), encoding="utf-8")
         cmd = [
-            sys.executable,
+            runtime.python(),
             "-m",
             "spotdl",
             "download",

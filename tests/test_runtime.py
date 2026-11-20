@@ -1,7 +1,10 @@
 import os
+import subprocess
 import sys
 
-from spotcheck import runtime
+import pytest
+
+from spotcheck import analysis, runtime
 
 
 def test_environment_for_child_processes(monkeypatch, tmp_path):
@@ -25,3 +28,19 @@ def test_environment_for_child_processes(monkeypatch, tmp_path):
 def test_user_folders_are_outside_the_installation():
     assert runtime.user_home().name == "SpotCheck"
     assert runtime.user_music() == runtime.user_music().home() / "Music" / "SpotCheck"
+
+
+def test_helper_programs_run_with_the_console_python(tmp_path, monkeypatch):
+    launcher = tmp_path / "SpotCheck.exe"
+    launcher.write_bytes(b"")
+    monkeypatch.setattr(runtime.sys, "executable", str(launcher))
+    monkeypatch.setattr(runtime.os, "name", "nt")
+    assert runtime.python() == str(launcher)
+    (tmp_path / "python.exe").write_bytes(b"")
+    assert runtime.python() == str(tmp_path / "python.exe")
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows only")
+def test_processes_start_with_a_hidden_window():
+    info = analysis.hidden_window()
+    assert info.dwFlags & subprocess.STARTF_USESHOWWINDOW and info.wShowWindow == 0

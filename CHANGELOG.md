@@ -4,6 +4,10 @@ Notable changes of each release. The format follows [Keep a Changelog](https://k
 
 ## Unreleased
 
+### Fixed
+
+- On Windows, no console or FFmpeg windows pop up any more while tracks are loaded, downloaded, checked or converted. Every helper program now runs fully in the background, so you can keep working while SpotCheck processes your music; the progress stays visible in SpotCheck itself.
+
 ## 1.2.1 - 2026-11-17
 
 ### Fixed
