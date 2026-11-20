@@ -7,6 +7,7 @@ from spotcheck.sources import (
     dance_hint,
     norm,
     pick_preview,
+    rank_previews,
     source_key,
     words_pattern,
 )
@@ -160,3 +161,65 @@ def test_find_candidates_respects_exclusions_and_enabled_sources(monkeypatch):
     assert [c["id"] for c in sources.find_candidates(song, exclude={"a"}, st=st)] == ["sc:9"]
     st = settings.merge(settings.defaults(), {"candidate_sources": ["youtube"]})
     assert sources.find_candidates(song, exclude={"a"}, st=st) == []
+
+
+RICK = {
+    "id": "4cOdK2wGLETKBW3PvgPWqT",
+    "name": "Never Gonna Give You Up",
+    "artist": "Rick Astley",
+    "artists": ["Rick Astley"],
+    "duration": 213,
+}
+RICK_DEEZER = [
+    {
+        "title": "Never Gonna Give You Up",
+        "artist": "Rick Astley",
+        "duration": 211,
+        "preview": "original",
+        "link": "d/1",
+    },
+    {
+        "title": "Never Gonna Give You Up (Cake Mix)",
+        "artist": "Rick Astley",
+        "duration": 347,
+        "preview": "cake",
+        "link": "d/2",
+    },
+    {
+        "title": "Never Gonna Give You Up (Pianoforte)",
+        "artist": "Rick Astley",
+        "duration": 213,
+        "preview": "piano",
+        "link": "d/3",
+    },
+    {
+        "title": "Never Gonna Give You Up (Instrumental)",
+        "artist": "Rick Astley",
+        "duration": 379,
+        "preview": "inst",
+        "link": "d/4",
+    },
+]
+
+
+def test_the_exact_title_beats_a_variant_of_the_same_length():
+    st = settings.defaults()
+    assert pick_preview(RICK, RICK_DEEZER, st)["preview"] == "original"
+    st["not_original_words"] = "live"
+    ranked = [it["preview"] for it in rank_previews(RICK, RICK_DEEZER, st)]
+    assert ranked == ["original", "piano"]
+
+
+def test_a_variant_wins_when_the_exact_title_is_much_longer():
+    song = {**RICK, "duration": 200}
+    items = [
+        {"title": "Never Gonna Give You Up", "artist": "Rick Astley", "duration": 205, "preview": "album", "link": "a"},
+        {
+            "title": "Never Gonna Give You Up (Radio Edit)",
+            "artist": "Rick Astley",
+            "duration": 200,
+            "preview": "edit",
+            "link": "b",
+        },
+    ]
+    assert pick_preview(song, items, settings.defaults())["preview"] == "edit"

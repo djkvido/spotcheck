@@ -14,7 +14,7 @@ from rapidfuzz import fuzz
 from . import analysis, fileops, origins
 from . import settings as settings_mod
 from .config import paths
-from .sources import file_source, norm
+from .sources import PREVIEW_PICKER, file_source, norm
 
 log = logging.getLogger(__name__)
 
@@ -414,7 +414,12 @@ class Library:
                         continue
                     sig = self.signature(path)
                     check = tr.get("check")
-                    if check is None or "cutoff_measured" not in check:
+                    verify = tr.get("verify") or {}
+                    stale = (
+                        verify.get("verdict") in ("MISMATCH", "UNSURE")
+                        and (verify.get("ref") or {}).get("picker") != PREVIEW_PICKER
+                    )
+                    if check is None or "cutoff_measured" not in check or stale:
                         changed.append(track_key(pl, tr))
                     elif "sig" not in check:
                         check["sig"] = sig

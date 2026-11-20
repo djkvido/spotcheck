@@ -4,6 +4,15 @@ Notable changes of each release. The format follows [Keep a Changelog](https://k
 
 ## Unreleased
 
+### Fixed
+
+- A correct track could be marked *Wrong* when Deezer offers another version of the same length, such as a piano version, as the official preview. The preview with the exact title is now preferred, and when a file does not match the preview, the next best previews are tried before the file counts as wrong. Tracks marked *Needs review* or *Wrong* by the earlier preview choice are checked again automatically.
+- Searching YouTube Music for Spotify tracks failed with ytmusicapi 1.12.3, so every download first spent about a minute on retries and then fell back to plain YouTube. Downloads are now about twice as fast and prefer the official audio from YouTube Music again.
+
+### Changed
+
+- The installers include spotDL 4.6.0 and ytmusicapi 1.12.1.
+
 ## 1.2.2 - 2026-11-20
 
 ### Fixed

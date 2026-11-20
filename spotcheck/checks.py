@@ -132,6 +132,17 @@ class Checks:
         preview = sources.get_preview(tr, self.st)
         if preview is None:
             return {"verdict": "NO_PREVIEW", "reason": "no_preview"}
+        result = self._compare(path, preview)
+        if result["verdict"] != "MISMATCH":
+            return result
+        for alternative in sources.alternative_previews(tr, self.st, {preview.get("link")}):
+            other = self._compare(path, alternative)
+            if other["verdict"] in ("MATCH", "UNSURE") and other["ber"] < result["ber"]:
+                sources.remember_preview(tr["id"], alternative)
+                return other
+        return result
+
+    def _compare(self, path: Path, preview: dict) -> dict:
         match = analysis.best_alignment(path, self.preview_fingerprint(preview))
         if match is None:
             return {"verdict": "NO_PREVIEW", "reason": "preview_too_short", "ref": preview}

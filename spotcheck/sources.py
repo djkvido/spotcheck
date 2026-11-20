@@ -28,6 +28,9 @@ DANCE_WORDS = (
     r"sb|merengue|salsa|bachata)"
 )
 NO_PREVIEW_TTL = 7 * 86400
+PREVIEW_PICKER = 2
+CLOSE_LENGTH = 3.0
+ALTERNATIVES_TTL = 3600.0
 ITUNES_DELAY = 3.2
 DEEZER_INTERVAL = 0.15
 DEEZER_QUOTA_PAUSE = 5.5
@@ -45,6 +48,8 @@ _deezer_last = [0.0]
 _itunes_lock = threading.Lock()
 _ytmusic_lock = threading.Lock()
 _ytmusic = None
+_alternatives: dict[str, tuple[float, list[dict]]] = {}
+_alternatives_lock = threading.Lock()
 
 
 def norm(text: str) -> str:
@@ -179,11 +184,11 @@ def _itunes(song: dict, errors: list[str]) -> list[dict]:
     return found
 
 
-def pick_preview(song: dict, items: list[dict], st: dict) -> dict | None:
+def rank_previews(song: dict, items: list[dict], st: dict) -> list[dict]:
     not_original = words_pattern(st["not_original_words"])
     want_full, want_clean = norm(song["name"]), norm(clean_title(song["name"]))
     artists = song.get("artists") or [song["artist"]]
-    best: tuple[tuple[float, float], dict] | None = None
+    ranked: dict[str, tuple[tuple, dict]] = {}
     for it in items:
         if not it.get("preview"):
             continue
@@ -194,10 +199,17 @@ def pick_preview(song: dict, items: list[dict], st: dict) -> dict | None:
         artist_score = max(fuzz.partial_ratio(norm(a), norm(it["artist"])) for a in artists)
         delta = abs(it["duration"] - song["duration"])
         if title_score >= 70 and artist_score >= 60 and delta <= 5:
-            key = (delta, -title_score)
-            if best is None or key < best[0]:
-                best = (key, it)
-    return best[1] if best else None
+            exact = title in (want_full, want_clean)
+            key = (delta > CLOSE_LENGTH, not exact, delta, -title_score)
+            link = it.get("link") or it["preview"]
+            if link not in ranked or key < ranked[link][0]:
+                ranked[link] = (key, it)
+    return [it for _, it in sorted(ranked.values(), key=lambda pair: pair[0])]
+
+
+def pick_preview(song: dict, items: list[dict], st: dict) -> dict | None:
+    ranked = rank_previews(song, items, st)
+    return ranked[0] if ranked else None
 
 
 def _index_path() -> Path:
@@ -239,37 +251,65 @@ def get_preview(song: dict, st: dict, force: bool = False) -> dict | None:
     with _index_lock:
         hit = _load_index().get(track_id)
     if hit and not force:
-        if hit.get("file") and (paths().previews / hit["file"]).exists():
+        current = hit.get("picker") == PREVIEW_PICKER
+        if current and hit.get("file") and (paths().previews / hit["file"]).exists():
             return hit
         if hit.get("none") and time.time() - hit.get("t", 0) < NO_PREVIEW_TTL:
             return None
 
     errors: list[str] = []
-    item = None
-    if st.get("use_deezer", True):
-        item = pick_preview(song, _deezer(song, errors), st)
-    if item is None and st.get("use_itunes", True):
-        item = pick_preview(song, _itunes(song, errors), st)
-
+    ranked = _ranked(song, st, errors)
     result = None
-    if item:
-        is_aac = item["src"] == "iTunes" or ".m4a" in item["preview"].split("?")[0]
-        name = re.sub(r"[^A-Za-z0-9]", "", track_id) + (".m4a" if is_aac else ".mp3")
+    if ranked:
         try:
-            (paths().previews / name).write_bytes(http_get(item["preview"], binary=True))
-            result = {
-                "src": item["src"],
-                "title": item["title"],
-                "artist": item["artist"],
-                "link": item["link"],
-                "file": name,
-            }
+            result = _download_preview(track_id, ranked[0], "")
         except Exception as exc:
             errors.append(f"preview download: {exc}")
     if result is None and errors:
         return None
     _store_index_entry(track_id, result or {"none": True, "t": time.time()})
     return result
+
+
+def _ranked(song: dict, st: dict, errors: list[str]) -> list[dict]:
+    ranked: list[dict] = []
+    if st.get("use_deezer", True):
+        ranked = rank_previews(song, _deezer(song, errors), st)
+    if not ranked and st.get("use_itunes", True):
+        ranked = rank_previews(song, _itunes(song, errors), st)
+    with _alternatives_lock:
+        _alternatives[song["id"]] = (time.monotonic(), ranked)
+    return ranked
+
+
+def _download_preview(track_id: str, item: dict, suffix: str) -> dict:
+    is_aac = item["src"] == "iTunes" or ".m4a" in item["preview"].split("?")[0]
+    name = re.sub(r"[^A-Za-z0-9]", "", track_id) + suffix + (".m4a" if is_aac else ".mp3")
+    (paths().previews / name).write_bytes(http_get(item["preview"], binary=True))
+    return {
+        "src": item["src"],
+        "title": item["title"],
+        "artist": item["artist"],
+        "link": item["link"],
+        "file": name,
+        "picker": PREVIEW_PICKER,
+    }
+
+
+def alternative_previews(song: dict, st: dict, used: set[str], limit: int = 2):
+    with _alternatives_lock:
+        cached = _alternatives.get(song["id"])
+    ranked = cached[1] if cached and time.monotonic() - cached[0] < ALTERNATIVES_TTL else _ranked(song, st, [])
+    others = [it for it in ranked if it.get("link") not in used][:limit]
+    for n, item in enumerate(others, 1):
+        try:
+            yield _download_preview(song["id"], item, f"-alt{n}")
+        except Exception as exc:
+            log.warning("Alternative preview of %s could not be downloaded: %s", song["id"], exc)
+
+
+def remember_preview(track_id: str, preview: dict) -> None:
+    _store_index_entry(track_id, preview)
 
 
 class _QueryFormatter(string.Formatter):

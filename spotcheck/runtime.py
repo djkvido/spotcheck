@@ -8,7 +8,7 @@ from pathlib import Path
 
 APP_NAME = "SpotCheck"
 WINDOWS = os.name == "nt"
-SPOTDL_REQUIREMENT = "spotdl==4.5.2"
+SPOTDL_REQUIREMENT = "spotdl==4.6.0"
 
 _packaged = False
 _packages: Path | None = None

@@ -49,7 +49,7 @@ DEFAULTS: dict[str, Any] = {
         "nightcore|8d|remake|piano version|choreograph\\w*|performance|show"
     ),
     "not_original_words": (
-        "live|piano version|piano|karaoke|cover|tribute|instrumental|acoustic version|"
+        "live|piano version|piano|pianoforte|karaoke|cover|tribute|instrumental|acoustic version|"
         "made famous|originally performed|in the style of"
     ),
     "auto_check": True,
