@@ -1,18 +1,23 @@
 from __future__ import annotations
 
+import ipaddress
 import json
 import logging
 import re
 import shutil
+import socket
 import subprocess
 import threading
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from . import analysis, convert, deps, fileops, origins, ytdlp
+from . import analysis, convert, deps, fileops, origins, sources, ytdlp
 from .config import paths
 from .errors import JobError
 
@@ -20,12 +25,15 @@ log = logging.getLogger(__name__)
 
 PROBE_TIMEOUT = 120
 STALL_TIMEOUT = 600
+POST_TIMEOUT = 4 * 3600
+MAX_HEIGHT = 4320
 EMIT_INTERVAL = 0.4
 HISTORY = 500
 WORKERS = 3
 PLAYLIST_LIMIT = 1000
 PROBE_CACHE = 50
 NAME_LIMIT = 150
+THUMB_LIMIT = 5_000_000
 CONTAINERS = ("mp4", "mkv", "webm")
 HEIGHTS = (4320, 2160, 1440, 1080, 720, 480, 360, 240, 144)
 AUDIO_FORMATS = {"mp3": "mp3", "m4a": "m4a", "opus": "opus", "ogg": "vorbis", "flac": "flac", "wav": "wav"}
@@ -124,7 +132,7 @@ class Options:
             raise JobError("invalid_option")
         if self.container not in CONTAINERS or self.audio not in AUDIO_FORMATS or self.bitrate not in BITRATES:
             raise JobError("invalid_option")
-        if self.height is not None and self.height not in HEIGHTS:
+        if self.height is not None and not 1 <= self.height <= MAX_HEIGHT:
             raise JobError("invalid_option")
         if self.subtitles not in SUBTITLE_MODES or len(self.languages) > 20:
             raise JobError("invalid_option")
@@ -151,13 +159,16 @@ def audio_formats() -> list[str]:
 
 
 def failure(text: str, result: subprocess.CompletedProcess | None = None) -> str:
+    if ytdlp.login_required(text):
+        return "login_required"
+    known = next((code for code, pattern in FAILURES if pattern.search(text)), None)
+    if known:
+        return known
     if result is not None:
         code = origins.refusal(result, text)
         if code:
             return code
-    elif ytdlp.login_required(text):
-        return "login_required"
-    return next((code for code, pattern in FAILURES if pattern.search(text)), "download_failed")
+    return "download_failed"
 
 
 def clean_detail(text: str) -> str:
@@ -269,6 +280,11 @@ def _resolution(item: dict[str, Any]) -> int | None:
     return min(sides) if sides else None
 
 
+def _unknown_video(info: dict[str, Any]) -> bool:
+    formats = info.get("formats") or [info]
+    return any(f.get("vcodec") is None and not _resolution(f) and f.get("url") for f in formats)
+
+
 def _heights(info: dict[str, Any]) -> list[int]:
     found = {
         _resolution(f) for f in info.get("formats") or [] if f.get("vcodec") not in (None, "none") and _resolution(f)
@@ -341,8 +357,8 @@ def variants(info: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str, floa
 def _has_audio(info: dict[str, Any]) -> bool:
     formats = info.get("formats") or []
     if not formats:
-        return info.get("acodec") not in ("none",)
-    return any(f.get("acodec") not in (None, "none") for f in formats)
+        return info.get("acodec") != "none"
+    return any(f.get("acodec") != "none" for f in formats)
 
 
 def _title(info: dict[str, Any], url: str) -> str:
@@ -393,7 +409,7 @@ def probe(url: str) -> dict[str, Any]:
         raise JobError("download_spotify")
     cmd = [*ytdlp_base(), "-J", "--flat-playlist", "--no-warnings", "--playlist-end", str(PLAYLIST_LIMIT), "--", url]
     try:
-        r = ytdlp.run(cmd, PROBE_TIMEOUT, lambda res: res.stdout.strip() not in ("", "null"))
+        r = ytdlp.run(cmd, PROBE_TIMEOUT, lambda res: res.stdout.strip() not in ("", "null"), shared=False)
     except subprocess.TimeoutExpired as exc:
         raise JobError("ytdlp_timeout") from exc
     except (OSError, subprocess.SubprocessError) as exc:
@@ -409,7 +425,8 @@ def probe(url: str) -> dict[str, Any]:
     thumbs: dict[str, str] = {}
     if info.get("_type") == "playlist" or info.get("entries") is not None:
         entries = []
-        for n, item in enumerate(e for e in info.get("entries") or [] if isinstance(e, dict)):
+        raw = [e for e in info.get("entries") or [] if isinstance(e, dict)]
+        for n, item in enumerate(raw):
             link = item.get("webpage_url") or item.get("url")
             if not isinstance(link, str) or not link.startswith("https://"):
                 continue
@@ -427,7 +444,7 @@ def probe(url: str) -> dict[str, Any]:
             "title": str(info.get("title") or url),
             "uploader": info.get("uploader") or info.get("channel"),
             "entries": entries,
-            "truncated": len(entries) >= PLAYLIST_LIMIT,
+            "truncated": len(raw) >= PLAYLIST_LIMIT,
         }
     else:
         if not info.get("formats") and not info.get("url"):
@@ -443,7 +460,7 @@ def probe(url: str) -> dict[str, Any]:
             "variants": sizes,
             "audio_bytes": audio_sizes,
             "live": bool(info.get("is_live")),
-            "video": bool(heights),
+            "video": bool(heights) or _unknown_video(info),
             "audio": _has_audio(info),
             "subtitles": sorted(k for k in (info.get("subtitles") or {}) if LANG.match(k) and k != "live_chat"),
             "auto_subtitles": sorted(k for k in (info.get("automatic_captions") or {}) if LANG.match(k))[:200],
@@ -454,6 +471,40 @@ def probe(url: str) -> dict[str, Any]:
             thumbs["0"] = _thumbnail(info)
     _remember(result, thumbs)
     return result
+
+
+class _SafeRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if not public_https(newurl):
+            raise urllib.error.HTTPError(newurl, code, "redirect_refused", headers, fp)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def public_https(url: str) -> bool:
+    parts = urllib.parse.urlsplit(url)
+    if parts.scheme.lower() != "https" or not parts.hostname:
+        return False
+    try:
+        found = socket.getaddrinfo(parts.hostname, parts.port or 443, proto=socket.IPPROTO_TCP)
+    except (OSError, UnicodeError):
+        return False
+    for *_, address in found:
+        ip = ipaddress.ip_address(address[0].split("%")[0])
+        if not ip.is_global or ip.is_multicast:
+            return False
+    return bool(found)
+
+
+def fetch_thumbnail(url: str, timeout: float = 15) -> bytes:
+    if not public_https(url):
+        raise ValueError("thumbnail_refused")
+    opener = urllib.request.build_opener(_SafeRedirect)
+    request = urllib.request.Request(url, headers=sources.USER_AGENT)
+    with opener.open(request, timeout=timeout) as response:
+        data = response.read(THUMB_LIMIT + 1)
+    if len(data) > THUMB_LIMIT:
+        raise ValueError("thumbnail_too_large")
+    return data
 
 
 def safe_stem(name: str) -> str:
@@ -523,18 +574,21 @@ class Downloader:
             raise JobError("ffmpeg_missing")
         if options.mode == "audio" and options.audio not in audio_formats():
             raise JobError("preset_unavailable")
+        checked = []
+        for entry in entries:
+            url = str(entry.get("url") or "")
+            if not url.startswith("https://"):
+                raise JobError("download_invalid_url")
+            raw = entry.get("options")
+            own = Options.from_dict(raw) if isinstance(raw, dict) else options
+            if own.mode == "audio" and own.audio not in audio_formats():
+                raise JobError("preset_unavailable")
+            if own.mode == "video" and own.container not in containers():
+                raise JobError("preset_unavailable")
+            checked.append((entry, url, own))
         ids = []
         with self.cond:
-            for entry in entries:
-                url = str(entry.get("url") or "")
-                if not url.startswith("https://"):
-                    raise JobError("download_invalid_url")
-                raw = entry.get("options")
-                own = Options.from_dict(raw) if isinstance(raw, dict) else options
-                if own.mode == "audio" and own.audio not in audio_formats():
-                    raise JobError("preset_unavailable")
-                if own.mode == "video" and own.container not in containers():
-                    raise JobError("preset_unavailable")
+            for entry, url, own in checked:
                 pending = next(
                     (
                         i
@@ -651,7 +705,7 @@ class Downloader:
     def _run(self, item: dict[str, Any], options: Options, workdir: Path) -> str:
         cmd = build_command(ytdlp_base(), options, item["url"], workdir, tool() or analysis.ffmpeg(), self.limit)
         lines: list[str] = []
-        state = {"streams": 1, "index": -1, "last": time.monotonic()}
+        state = {"streams": 1, "index": -1, "last": time.monotonic(), "limit": STALL_TIMEOUT}
         stalled = threading.Event()
         finished = threading.Event()
 
@@ -684,6 +738,7 @@ class Downloader:
                 return
             phase = phase_of(line)
             if phase:
+                state["limit"] = POST_TIMEOUT
                 item["phase"], item["speed"], item["eta"] = phase, None, None
                 self._emit(item)
                 return
@@ -693,7 +748,7 @@ class Downloader:
 
         def watchdog() -> None:
             while not finished.wait(15):
-                if time.monotonic() - state["last"] > STALL_TIMEOUT and item.get("_proc") is not None:
+                if time.monotonic() - state["last"] > state["limit"] and item.get("_proc") is not None:
                     stalled.set()
                     analysis.kill_tree(item["_proc"])
                     return
@@ -764,7 +819,7 @@ class Downloader:
         stem = safe_stem(item["title"] if item["title"] != item["url"] else main.stem)
         target = fileops.reserve(folder / f"{stem}{main.suffix.lower()}")
         try:
-            fileops.replace(main, target)
+            fileops.install(main, target)
         except OSError:
             fileops.release(target)
             raise
@@ -774,7 +829,7 @@ class Downloader:
             suffix = "".join(extra.suffixes[-2:]) if len(extra.suffixes) > 1 else extra.suffix
             extra_target = fileops.reserve(folder / f"{target.stem}{suffix}")
             try:
-                fileops.replace(extra, extra_target)
+                fileops.install(extra, extra_target)
             except OSError:
                 fileops.release(extra_target)
                 continue

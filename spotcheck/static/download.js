@@ -120,6 +120,22 @@ function dlQueued(url, options) {
   return [...dl.items.values()].find((i) => i.url === url && i.state !== "failed" && i.state !== "cancelled" && JSON.stringify(i.options) === wanted) || null;
 }
 
+async function dlReloadItems() {
+  try {
+    const data = await api("/api/download");
+    dl.data.items = data.items;
+    dl.data.paused = data.paused;
+    dl.data.limit = data.limit;
+    dl.items = new Map(data.items.map((item) => [item.id, item]));
+  } catch {
+    return;
+  }
+  dl.cards.forEach(dlPatchCard);
+  dlRenderQueue();
+  dlRenderStart();
+  dlUpdateTitle();
+}
+
 async function dlLoad() {
   try {
     dl.data = await api("/api/download");
@@ -551,7 +567,7 @@ function dlFinishBatch() {
 function dlOnEvent(event) {
   if (!dl.loaded) return;
   if (event.type === "download") dlUpdateItem(event.item);
-  else if (event.type === "download_list") dlLoad();
+  else if (event.type === "download_list") dlReloadItems();
   else if (event.type === "download_settings") {
     dl.data.paused = event.paused;
     dl.data.limit = event.limit;
@@ -581,7 +597,7 @@ function dlPump() {
         clearTimeout(slow);
         dl.active -= 1;
         dlRenderInput();
-        if (dl.auto && card.status === "ready" && card.result.kind === "single") dlStart([card]);
+        if (dl.auto && dl.cards.includes(card) && card.status === "ready" && card.result.kind === "single") dlStart([card]);
         dlPump();
       });
   }
@@ -593,7 +609,9 @@ function dlPatchCard(card) {
 }
 
 function dlAddLinks(text) {
-  const links = [...new Set(String(text).split(/\s+/).map((x) => x.trim()).filter(Boolean))];
+  const words = String(text).split(/\s+/).map((x) => x.trim().replace(/^[<("']+|[>)"',.;!?]+$/g, "")).filter(Boolean);
+  const linkish = words.filter((w) => /^https?:\/\//i.test(w) || /^(www\.)?[\w-]+(\.[\w-]+)+\/\S*/i.test(w));
+  const links = [...new Set(linkish.length ? linkish : words)];
   if (!links.length) return;
   const known = new Set(dl.cards.map((c) => c.url));
   for (const url of links) {
@@ -679,7 +697,7 @@ $("#downloader").addEventListener("click", (event) => {
   if (pick && event.shiftKey) {
     const [key, index] = pick.dataset.dlPick.split(":");
     const card = dl.cards.find((c) => c.key === key);
-    if (card) { event.preventDefault(); dlPickEntries(card, Number(index), !card.selected.has(Number(index)), true); }
+    if (card) dlPickEntries(card, Number(index), pick.checked, true);
     return;
   }
   const el = event.target.closest("[data-dl],[data-dl-mode],[data-dl-container],[data-dl-audio],[data-dl-remove],[data-dl-again],[data-dl-all],[data-dl-invert],[data-dl-lang],[data-dl-cancel],[data-dl-retry],[data-dl-reveal],[data-dl-play]");

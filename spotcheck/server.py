@@ -986,7 +986,7 @@ def create_app(automation: bool = True) -> FastAPI:
         if not url:
             raise HTTPException(404, "cover_unavailable")
         try:
-            data = await asyncio.to_thread(sources.http_get, url, True, 15)
+            data = await asyncio.to_thread(downloader.fetch_thumbnail, url)
         except Exception as exc:
             raise HTTPException(404, "cover_unavailable") from exc
         kind = image_type(data)

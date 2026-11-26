@@ -81,19 +81,21 @@ def run(
     done: Callable[[subprocess.CompletedProcess], bool],
     cwd: str | None = None,
     text: Callable[[subprocess.CompletedProcess | None], str] = output,
+    shared: bool = True,
 ) -> subprocess.CompletedProcess:
-    delays = () if cooling() else RETRIES
+    delays = () if shared and cooling() else RETRIES
     result = None
     for delay in (*delays, None):
         result = analysis.run_text(cmd, timeout=timeout, cwd=cwd)
         if done(result):
-            with _lock:
-                _state["blocked"] = 0.0
+            if shared:
+                with _lock:
+                    _state["blocked"] = 0.0
             return result
         if delay is None or not blocked(text(result)):
             break
         analysis.pause(delay)
-    if blocked(text(result)):
+    if shared and blocked(text(result)):
         with _lock:
             _state["blocked"] = time.monotonic()
     return result

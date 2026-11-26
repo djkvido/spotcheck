@@ -41,7 +41,7 @@ def test_options_are_validated():
     for raw in (
         {"mode": "film"},
         {"container": "avi"},
-        {"height": 999},
+        {"height": 99999},
         {"height": "1080"},
         {"hdr": "yes"},
         {"audio": "aac"},
@@ -572,3 +572,60 @@ def test_download_folder_space_and_settings_endpoints(client, monkeypatch, tmp_p
     assert client.post("/api/download/nope/open", headers=HEADERS).status_code == 404
     assert client.post("/api/download/nope/reveal", headers=HEADERS).status_code == 404
     assert client.post("/api/download/nope/cancel", headers=HEADERS).json() == {"ok": False}
+
+
+def test_review_fixes_for_heights_failures_and_unknown_formats(monkeypatch):
+    assert Options.from_dict({"height": 540}).height == 540
+    for bad in (0, -1, 9000):
+        with pytest.raises(JobError, match="invalid_option"):
+            Options.from_dict({"height": bad})
+    assert downloader.failure("ERROR: Requested format is not available", completed(1, "", "x")) == "download_format"
+    assert (
+        downloader.failure("ERROR: Video unavailable. This video is private", completed(1, "", "x")) == "login_required"
+    )
+    info = {"id": "x", "title": "Clip", "formats": [{"format_id": "sd", "url": "https://cdn.example/sd.mp4"}]}
+    probed = probe_with(monkeypatch, info)("https://example.com/clip")
+    assert probed["video"] is True and probed["audio"] is True and probed["heights"] == []
+
+
+def test_a_cut_playlist_reports_truncation_even_with_skipped_entries(monkeypatch):
+    monkeypatch.setattr(downloader, "PLAYLIST_LIMIT", 3)
+    entries = [
+        {"url": "https://www.youtube.com/watch?v=aaaaaaaaaaa", "title": "[Private video]"},
+        {"url": "https://www.youtube.com/watch?v=bbbbbbbbbbb", "title": "B"},
+        {"url": "https://www.youtube.com/watch?v=ccccccccccc", "title": "C"},
+    ]
+    probed = probe_with(monkeypatch, {"_type": "playlist", "entries": entries})(
+        "https://www.youtube.com/playlist?list=PLx"
+    )
+    assert probed["truncated"] is True and len(probed["entries"]) == 2
+
+
+def test_thumbnails_are_fetched_only_from_public_https_hosts(monkeypatch):
+    assert not downloader.public_https("http://example.com/a.jpg")
+    assert not downloader.public_https("https://127.0.0.1/a.jpg")
+    assert not downloader.public_https("https://localhost/a.jpg")
+    assert not downloader.public_https("https://192.168.1.1/a.jpg")
+    assert not downloader.public_https("https://[::1]/a.jpg")
+    assert not downloader.public_https("https://169.254.169.254/latest")
+    assert downloader.public_https("https://8.8.8.8/a.jpg")
+    with pytest.raises(ValueError, match="thumbnail_refused"):
+        downloader.fetch_thumbnail("https://10.0.0.1/a.jpg")
+
+
+def test_a_probe_does_not_set_the_library_cooldown(monkeypatch):
+    monkeypatch.setattr(analysis, "pause", lambda seconds: None)
+    monkeypatch.setattr(
+        analysis, "run_text", lambda *a, **k: completed(1, "", "ERROR: HTTP Error 429: Too Many Requests")
+    )
+    with pytest.raises(JobError):
+        downloader.probe("https://www.instagram.com/reel/ABCDEF/")
+    assert not ytdlp.cooling()
+
+
+def test_an_invalid_entry_queues_nothing(workspace, monkeypatch, tmp_path):
+    fake_download(monkeypatch, lambda workdir: None)
+    fetcher = Downloader(Bus())
+    with pytest.raises(JobError, match="download_invalid_url"):
+        fetcher.add([{"url": VIDEO}, {"url": "ftp://x"}], {"mode": "video"}, tmp_path)
+    assert fetcher.public() == []
