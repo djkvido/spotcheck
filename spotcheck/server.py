@@ -19,10 +19,24 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import __version__, analysis, codecs, convert, deps, diagnostics, fileops, origins, projects, sources, terms
+from . import (
+    __version__,
+    analysis,
+    codecs,
+    convert,
+    deps,
+    diagnostics,
+    downloader,
+    fileops,
+    origins,
+    projects,
+    sources,
+    terms,
+)
 from . import settings as settings_mod
 from .config import STATIC_DIR, paths
 from .converter import Converter
+from .downloader import Downloader
 from .engine import Bus, Engine
 from .errors import JobError
 from .library import Library, playlist_id
@@ -117,6 +131,25 @@ class ScopeRequest(BaseModel):
 class ConvertRequest(BaseModel):
     files: list[str] = Field(min_length=1, max_length=MAX_FILES)
     target: dict[str, Any]
+    folder: str | None = None
+
+
+class ProbeRequest(BaseModel):
+    url: str = Field(min_length=1, max_length=4000)
+
+
+class DownloadEntry(BaseModel):
+    url: str = Field(min_length=1, max_length=4000)
+    title: str | None = Field(None, max_length=500)
+    uploader: str | None = Field(None, max_length=300)
+    duration: float | None = None
+    probe: str | None = Field(None, max_length=40)
+    thumb: int | None = None
+
+
+class DownloadRequest(BaseModel):
+    entries: list[DownloadEntry] = Field(min_length=1, max_length=downloader.PLAYLIST_LIMIT)
+    options: dict[str, Any]
     folder: str | None = None
 
 
@@ -263,6 +296,18 @@ def pick_files(initial: str | None) -> list[str]:
     return [str(Path(c)) for c in chosen if c.strip()]
 
 
+def image_type(data: bytes) -> str | None:
+    if data[:3] == b"\xff\xd8\xff":
+        return "image/jpeg"
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image/png"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    if data[:6] in (b"GIF87a", b"GIF89a"):
+        return "image/gif"
+    return None
+
+
 def convert_error(exc: JobError) -> HTTPException:
     return HTTPException(422 if exc.code.startswith(("folder_", "invalid_", "unknown_")) else 409, exc.code)
 
@@ -288,6 +333,7 @@ def create_app(automation: bool = True) -> FastAPI:
 
     engine = Engine(Library(on_save=on_save), bus)
     converter = Converter(bus)
+    fetcher = Downloader(bus)
 
     def lib() -> Library:
         return engine.lib
@@ -305,6 +351,7 @@ def create_app(automation: bool = True) -> FastAPI:
     async def lifespan(_: FastAPI):
         bus.loop = asyncio.get_running_loop()
         await asyncio.to_thread(convert.clean_inbox)
+        await asyncio.to_thread(downloader.clean_workspace)
         if automation and terms.accepted():
             threading.Thread(target=check_ytdlp, name="spotcheck-updates", daemon=True).start()
         await asyncio.to_thread(lib().link_files)
@@ -312,6 +359,7 @@ def create_app(automation: bool = True) -> FastAPI:
             engine.start_automation()
         yield
         await asyncio.to_thread(converter.close)
+        await asyncio.to_thread(fetcher.close)
         await asyncio.to_thread(lib().save)
         await asyncio.to_thread(sources.flush_index)
 
@@ -890,5 +938,99 @@ def create_app(automation: bool = True) -> FastAPI:
         await asyncio.to_thread(convert.capabilities, True)
         bus.emit({"type": "codecs", "job": dict(converter.codecs_job), "status": codecs.status()})
         return {"ok": removed}
+
+    def download_state() -> dict[str, Any]:
+        return {
+            "items": fetcher.public(),
+            "audio_formats": downloader.audio_formats(),
+            "containers": downloader.CONTAINERS,
+            "heights": downloader.HEIGHTS,
+            "bitrates": downloader.BITRATES,
+            "default_folder": str(convert.default_folder()),
+            "picker": folder_picker_available(),
+            "ready": bool(downloader.tool()),
+        }
+
+    @app.get("/api/download")
+    async def get_download() -> dict[str, Any]:
+        return await asyncio.to_thread(download_state)
+
+    @app.post("/api/download/probe")
+    async def probe_download(body: ProbeRequest) -> dict[str, Any]:
+        try:
+            return await asyncio.to_thread(downloader.probe, body.url)
+        except JobError as exc:
+            raise HTTPException(422, exc.code) from exc
+
+    @app.get("/api/download/thumb/{probe_id}/{index}")
+    async def download_thumb(probe_id: str, index: int) -> Response:
+        url = downloader.thumbnail_url(probe_id, index)
+        if not url:
+            raise HTTPException(404, "cover_unavailable")
+        try:
+            data = await asyncio.to_thread(sources.http_get, url, True, 15)
+        except Exception as exc:
+            raise HTTPException(404, "cover_unavailable") from exc
+        kind = image_type(data)
+        if kind is None:
+            raise HTTPException(404, "cover_unavailable")
+        return Response(data, media_type=kind, headers={"Cache-Control": "max-age=3600"})
+
+    @app.post("/api/download")
+    async def start_download(body: DownloadRequest) -> dict[str, list[str]]:
+        def run() -> list[str]:
+            folder = convert.output_folder(body.folder) if body.folder else convert.default_folder()
+            return fetcher.add([e.model_dump() for e in body.entries], body.options, folder)
+
+        try:
+            return {"items": await asyncio.to_thread(run)}
+        except JobError as exc:
+            raise convert_error(exc) from exc
+
+    @app.post("/api/download/clear")
+    async def clear_downloads() -> dict[str, int]:
+        return {"removed": fetcher.clear()}
+
+    @app.post("/api/download/cancel-all")
+    async def cancel_downloads() -> dict[str, int]:
+        return {"cancelled": fetcher.cancel_all()}
+
+    @app.post("/api/download/open-folder")
+    async def open_download_folder(body: FolderRequest) -> dict[str, bool]:
+        try:
+            folder = convert.output_folder(body.initial) if body.initial else convert.default_folder()
+        except JobError as exc:
+            raise convert_error(exc) from exc
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+            fileops.reveal(folder)
+        except OSError as exc:
+            raise HTTPException(500, "open_failed") from exc
+        return {"ok": True}
+
+    @app.post("/api/download/{item_id}/cancel")
+    async def cancel_download(item_id: str) -> dict[str, bool]:
+        return {"ok": fetcher.cancel(item_id)}
+
+    @app.post("/api/download/{item_id}/retry")
+    async def retry_download(item_id: str) -> dict[str, str]:
+        try:
+            return {"item": await asyncio.to_thread(fetcher.retry, item_id)}
+        except JobError as exc:
+            raise convert_error(exc) from exc
+
+    @app.post("/api/download/{item_id}/reveal")
+    async def reveal_download(item_id: str) -> dict[str, bool]:
+        item = fetcher.find(item_id)
+        if item is None:
+            raise HTTPException(404, "download_not_found")
+        target = Path(item["output"]) if item["output"] else Path(item["folder"])
+        if not target.exists():
+            raise HTTPException(404, "path_not_found")
+        try:
+            fileops.reveal(target)
+        except OSError as exc:
+            raise HTTPException(500, "open_failed") from exc
+        return {"ok": True}
 
     return app

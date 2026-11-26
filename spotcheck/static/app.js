@@ -61,6 +61,8 @@ const ICONS = {
   tag: '<path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/>',
   share: '<path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/>',
   cloud: '<path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/>',
+  facebook: '<path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/>',
+  instagram: '<rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/>',
 };
 const icon = (name, cls = "") => `<svg class="icon ${cls}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name] || ""}</svg>`;
 
@@ -74,8 +76,8 @@ const STAT_CARDS = ["ok", "partial", "review", "bad", "missing"];
 const VERDICT_CLASS = { MATCH: "s-ok", UNSURE: "s-review", MISMATCH: "s-bad" };
 const statusOf = (tr) => (STATUS_CLASS[tr.status] ? tr.status : "unchecked");
 const statusLabel = (status) => t(`status.${STATUS_CLASS[status] ? status : "unchecked"}`);
-const ORIGIN_NAMES = { spotify: "Spotify", youtube: "YouTube", soundcloud: "SoundCloud", bandcamp: "Bandcamp", singles: "Singles" };
-const ORIGIN_ICONS = { spotify: "spotify", youtube: "youtube", soundcloud: "cloud", bandcamp: "music", singles: "music" };
+const ORIGIN_NAMES = { spotify: "Spotify", youtube: "YouTube", soundcloud: "SoundCloud", bandcamp: "Bandcamp", facebook: "Facebook", instagram: "Instagram", singles: "Singles" };
+const ORIGIN_ICONS = { spotify: "spotify", youtube: "youtube", soundcloud: "cloud", bandcamp: "music", facebook: "facebook", instagram: "instagram", singles: "music" };
 const originOf = (item) => (ORIGIN_NAMES[item?.origin] ? item.origin : "spotify");
 const originIcon = (origin) => icon(ORIGIN_ICONS[origin] || "link", "sm");
 
@@ -84,7 +86,7 @@ function normalizeUrl(raw) {
   const uri = url.match(/^spotify:(track|album|playlist):([A-Za-z0-9]+)$/);
   if (uri) return `https://open.spotify.com/${uri[1]}/${uri[2]}`;
   if (/^http:\/\//i.test(url)) url = `https://${url.slice(7)}`;
-  else if (/^(?:open\.spotify\.com|(?:www\.|m\.|music\.)?youtube\.com|youtu\.be|(?:www\.|m\.)?soundcloud\.com|[a-z0-9-]+\.bandcamp\.com)\//i.test(url)) url = `https://${url}`;
+  else if (/^(?:open\.spotify\.com|(?:www\.|m\.|music\.)?youtube\.com|youtu\.be|(?:www\.|m\.)?soundcloud\.com|[a-z0-9-]+\.bandcamp\.com|(?:www\.|m\.)?facebook\.com|fb\.watch|(?:www\.)?instagram\.com)\//i.test(url)) url = `https://${url}`;
   return url.replace(/^(https:\/\/(?:www\.|m\.)?youtube\.com)\/shorts\/([A-Za-z0-9_-]{6,})/, "$1/watch?v=$2");
 }
 
@@ -105,7 +107,12 @@ function classifyUrl(rawUrl) {
   m = url.match(/^https:\/\/(?:www\.|m\.)?soundcloud\.com\/([A-Za-z0-9_-]+)\/(?!sets(?:[/?#]|$))([A-Za-z0-9_-]+)/);
   if (m) return ["soundcloud", `sc-${m[1]}-${m[2]}`, "track"];
   m = url.match(/^https:\/\/([a-z0-9-]+)\.bandcamp\.com\/track\/([A-Za-z0-9_-]+)/);
-  return m ? ["bandcamp", `bc-${m[1]}-${m[2]}`, "track"] : null;
+  if (m) return ["bandcamp", `bc-${m[1]}-${m[2]}`, "track"];
+  m = url.match(/^https:\/\/(?:www\.|m\.|web\.|mbasic\.)?facebook\.com\/(?:reel\/(\d+)|watch\/?\?(?:\S*?&)?v=(\d+)|[^/?#]+\/videos\/(?:[^/?#]+\/)?(\d+)|video\.php\?(?:\S*?&)?v=(\d+)|share\/(?:r|v)\/([A-Za-z0-9]+))/)
+    || url.match(/^https:\/\/fb\.watch\/([A-Za-z0-9_-]+)/);
+  if (m) return ["facebook", `fb-${m.slice(1).find(Boolean)}`, "track"];
+  m = url.match(/^https:\/\/(?:www\.)?instagram\.com\/(?:[A-Za-z0-9_.]+\/)?(?:reels?|p|tv)\/([A-Za-z0-9_-]+)/);
+  return m ? ["instagram", `ig-${m[1]}`, "track"] : null;
 }
 
 function unsupportedKind(rawUrl) {
@@ -1237,7 +1244,7 @@ document.addEventListener("keydown", (event) => {
 });
 document.addEventListener("keydown", (event) => {
   const typing = /^(input|textarea|select)$/i.test(document.activeElement.tagName);
-  if (event.key === "/" && !typing && state.app !== "convert" && !document.querySelector("dialog[open]")) { event.preventDefault(); $("#search").focus(); }
+  if (event.key === "/" && !typing && state.app === "library" && !document.querySelector("dialog[open]")) { event.preventDefault(); $("#search").focus(); }
   if (event.key === "Escape" && state.openKey && !document.querySelector("dialog[open]")) closeDrawer();
 });
 window.addEventListener("hashchange", () => {
@@ -1266,6 +1273,7 @@ $("#btn-lang").addEventListener("click", () => {
   delete $("#drawer").dataset.key;
   renderAll();
   if (cv.loaded) cvRender();
+  if (dl.loaded) dlRender();
 });
 $("#sysinfo").addEventListener("click", () => openSettings("deps"));
 document.addEventListener("error", (event) => {
@@ -2140,6 +2148,10 @@ function connectEvents() {
       case "settings":
         state.library.settings = event.settings;
         scheduleRender();
+        break;
+      case "download":
+      case "download_list":
+        dlOnEvent(event);
         break;
       case "convert":
       case "convert_list":

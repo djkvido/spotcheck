@@ -26,11 +26,25 @@ SOUNDCLOUD_TRACK = re.compile(
     r"^https://(?:www\.|m\.)?soundcloud\.com/([A-Za-z0-9_-]+)/(?!sets(?:[/?#]|$))([A-Za-z0-9_-]+)"
 )
 BANDCAMP_TRACK = re.compile(r"^https://([a-z0-9-]+)\.bandcamp\.com/track/([A-Za-z0-9_-]+)")
+FACEBOOK_VIDEO = re.compile(
+    r"^https://(?:www\.|m\.|web\.|mbasic\.)?facebook\.com/(?:reel/(\d+)|watch/?\?(?:\S*?&)?v=(\d+)"
+    r"|[^/?#]+/videos/(?:[^/?#]+/)?(\d+)|video\.php\?(?:\S*?&)?v=(\d+)|share/(?:r|v)/([A-Za-z0-9]+))"
+)
+FB_WATCH = re.compile(r"^https://fb\.watch/([A-Za-z0-9_-]+)")
+INSTAGRAM_POST = re.compile(r"^https://(?:www\.)?instagram\.com/(?:[A-Za-z0-9_.]+/)?(reels?|p|tv)/([A-Za-z0-9_-]+)")
+SOCIAL = ("facebook", "instagram")
+SOCIAL_NAMES = {"facebook": "Facebook", "instagram": "Instagram"}
+SOCIAL_COUNTS = re.compile(
+    r"^(?:[\d.,]+\s*[KMB]?\s+(?:reactions?|views?|shares?|comments?|likes?|plays?)\s*[\u00b7|]\s*)+", re.I
+)
+SOCIAL_GENERIC = re.compile(r"^(?:Video|Post|Reel|Photo)s? by\b", re.I)
+SOCIAL_NOISE = re.compile(r"https?://\S+|[#@][\w.]+")
+SOCIAL_TITLE_LIMIT = 80
 SINGLES_NAME = "Singles"
 SPOTIFY_URI = re.compile(r"^spotify:(track|album|playlist):([A-Za-z0-9]+)$")
 BARE_HOST = re.compile(
     r"^(?:open\.spotify\.com|(?:www\.|m\.|music\.)?youtube\.com|youtu\.be|(?:www\.|m\.)?soundcloud\.com"
-    r"|[a-z0-9-]+\.bandcamp\.com)/"
+    r"|[a-z0-9-]+\.bandcamp\.com|(?:www\.|m\.)?facebook\.com|fb\.watch|(?:www\.)?instagram\.com)/"
 )
 YOUTUBE_SHORTS = re.compile(r"^(https://(?:www\.|m\.)?youtube\.com)/shorts/([A-Za-z0-9_-]{6,})")
 
@@ -94,6 +108,12 @@ def classify_track(url: str) -> tuple[str, str] | None:
     m = BANDCAMP_TRACK.match(url)
     if m:
         return "bandcamp", f"bc-{m.group(1)}-{m.group(2)}"
+    m = FACEBOOK_VIDEO.match(url) or FB_WATCH.match(url)
+    if m:
+        return "facebook", "fb-" + next(g for g in m.groups() if g)
+    m = INSTAGRAM_POST.match(url)
+    if m:
+        return "instagram", "ig-" + m.group(2)
     return None
 
 
@@ -108,6 +128,15 @@ def canonical_track_url(url: str) -> str:
     if origin == "youtube":
         music = urllib.parse.urlparse(url).hostname == "music.youtube.com"
         return f"https://{'music' if music else 'www'}.youtube.com/watch?v={ident[3:]}"
+    if origin == "facebook":
+        m = FACEBOOK_VIDEO.match(url)
+        if m and m.group(1):
+            return f"https://www.facebook.com/reel/{m.group(1)}"
+        if m and any(m.group(i) for i in (2, 3, 4)):
+            return f"https://www.facebook.com/watch/?v={ident[3:]}"
+    if origin == "instagram":
+        kind = INSTAGRAM_POST.match(url).group(1)
+        return f"https://www.instagram.com/{'reel' if kind.startswith('reel') else kind}/{ident[3:]}/"
     parts = urllib.parse.urlsplit(url)
     return urllib.parse.urlunsplit((parts.scheme, parts.netloc, parts.path, "", ""))
 
@@ -170,6 +199,10 @@ def identify(artist: str, title: str, duration: float) -> dict[str, Any] | None:
 def _entry_url(entry: dict, origin: str) -> str | None:
     if origin == "youtube" and entry.get("id"):
         return f"https://www.youtube.com/watch?v={entry['id']}"
+    if origin == "facebook" and entry.get("id"):
+        return f"https://www.facebook.com/watch/?v={entry['id']}"
+    if origin == "instagram" and entry.get("id"):
+        return canonical_track_url(str(entry.get("webpage_url") or f"https://www.instagram.com/reel/{entry['id']}/"))
     return entry.get("webpage_url") or entry.get("url")
 
 
@@ -179,20 +212,36 @@ def _thumbnail(entry: dict, origin: str) -> str | None:
     return entry.get("thumbnail")
 
 
-def parse_entry(entry: dict) -> tuple[str, str]:
+def parse_entry(entry: dict, origin: str = "") -> tuple[str, str]:
     artists = entry.get("artists") or ([entry["artist"]] if entry.get("artist") else None)
     if artists and entry.get("track"):
         return ", ".join(artists), entry["track"]
+    if origin in SOCIAL:
+        return social_title(entry, origin)
     return split_title(entry.get("title") or "", entry.get("channel") or entry.get("uploader") or "")
+
+
+def social_title(entry: dict, origin: str) -> tuple[str, str]:
+    author = str(entry.get("uploader") or entry.get("channel") or SOCIAL_NAMES[origin]).strip()
+    text = SOCIAL_COUNTS.sub("", str(entry.get("title") or "")).strip()
+    if author and text.endswith(f"| {author}"):
+        text = text[: -len(author) - 2].rstrip(" |")
+    if not text or SOCIAL_GENERIC.match(text):
+        text = str(entry.get("description") or "")
+    lines = (re.sub(r"\s+", " ", SOCIAL_NOISE.sub(" ", line)).strip(" -|\u00b7") for line in text.splitlines())
+    text = next((line for line in lines if line), "")
+    if len(text) > SOCIAL_TITLE_LIMIT:
+        text = text[:SOCIAL_TITLE_LIMIT].rsplit(" ", 1)[0].rstrip(" ,.;:-") + "\u2026"
+    return author, text or f"{SOCIAL_NAMES[origin]} {entry.get('id', '')}".strip()
 
 
 def entry_song(entry: dict, origin: str, list_name: str, position: int, official: dict | None) -> dict[str, Any] | None:
     url = _entry_url(entry, origin)
     if not url or not entry.get("id"):
         return None
-    artist, title = parse_entry(entry)
+    artist, title = parse_entry(entry, origin)
     duration = float(entry.get("duration") or 0)
-    prefix = {"youtube": "yt", "soundcloud": "sc", "bandcamp": "bc"}[origin]
+    prefix = {"youtube": "yt", "soundcloud": "sc", "bandcamp": "bc", "facebook": "fb", "instagram": "ig"}[origin]
     song = {
         "song_id": f"{prefix}-{entry['id']}",
         "url": url,
@@ -234,6 +283,8 @@ def is_snippet(entry: dict) -> bool:
 
 def refusal(result: subprocess.CompletedProcess, text: str | None = None) -> str | None:
     text = ytdlp.output(result) if text is None else text
+    if ytdlp.login_required(text):
+        return "login_required"
     if ytdlp.blocked(text):
         return "youtube_blocked"
     if ytdlp.forbidden(text):
@@ -276,8 +327,10 @@ def load_track(
         info = next((e for e in info["entries"] if e), None)
     if not isinstance(info, dict) or not info.get("id") or (origin == "soundcloud" and is_snippet(info)):
         return fail("ytdlp_track_empty", r.stderr)
-    artist, title = parse_entry(info)
-    official = identify(artist, title, float(info.get("duration") or 0))
+    if origin in SOCIAL and not any(info.get(k) for k in ("duration", "formats", "url", "requested_formats")):
+        return fail("social_no_media", r.stderr)
+    artist, title = parse_entry(info, origin)
+    official = None if origin in SOCIAL else identify(artist, title, float(info.get("duration") or 0))
     song = entry_song(info, origin, SINGLES_NAME, 1, official)
     return [song] if song else fail("ytdlp_track_empty", r.stderr)
 

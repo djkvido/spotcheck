@@ -21,6 +21,8 @@ PROBES = (
     ("YouTube Music", "https://music.youtube.com/"),
     ("SoundCloud", "https://soundcloud.com/"),
     ("Bandcamp", "https://bandcamp.com/"),
+    ("Facebook", "https://www.facebook.com/"),
+    ("Instagram", "https://www.instagram.com/"),
     ("Deezer", "https://api.deezer.com/chart"),
     ("iTunes", "https://itunes.apple.com/search?term=a&limit=1"),
     ("GitHub", "https://github.com/"),

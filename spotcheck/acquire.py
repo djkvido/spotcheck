@@ -12,7 +12,11 @@ from .config import paths
 from .errors import Cancelled
 from .library import AUDIO_SUFFIXES, base_name, folder_name
 
-YTDLP_FORMATS = {"opus": "bestaudio[acodec=opus]/bestaudio", "m4a": "bestaudio[ext=m4a]/bestaudio", "mp3": "bestaudio"}
+YTDLP_FORMATS = {
+    "opus": "bestaudio[acodec=opus]/bestaudio/best",
+    "m4a": "bestaudio[ext=m4a]/bestaudio/best",
+    "mp3": "bestaudio/best",
+}
 
 
 class Acquiring:

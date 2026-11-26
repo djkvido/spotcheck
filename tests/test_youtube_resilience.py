@@ -74,11 +74,11 @@ def test_while_a_site_is_blocking_further_requests_are_not_retried(monkeypatch, 
 
 
 def test_age_restricted_and_private_videos_are_not_retried(monkeypatch, quiet):
-    for stderr in (AGE, "ERROR: Video unavailable. This video is private"):
+    for stderr, code in ((AGE, "ytdlp_failed"), ("ERROR: Video unavailable. This video is private", "login_required")):
         seen = []
         calls = answer(monkeypatch, completed(1, "", stderr))
         origins.load_track(VIDEO, ["yt-dlp"], on_error=lambda code, detail, found=seen: found.append(code))
-        assert len(calls) == 1 and seen == ["ytdlp_failed"] and quiet == []
+        assert len(calls) == 1 and seen == [code] and quiet == []
 
 
 def test_a_refused_download_points_to_an_update(monkeypatch, quiet):

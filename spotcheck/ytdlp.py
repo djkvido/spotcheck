@@ -17,6 +17,11 @@ FORBIDDEN = re.compile(
     r"HTTP Error 403|Requested format is not available|nsig extraction failed|Signature extraction failed",
     re.I,
 )
+LOGIN = re.compile(
+    r"login required|log in to|you need to log in|requires? authentication|only available for registered users|"
+    r"this content isn.t available right now|private video|video is private|content is not available",
+    re.I,
+)
 ERROR_LINE = re.compile(r"\bERROR\b|Error:|AudioProviderError|DownloadError")
 NOT_FOUND = re.compile(r"LookupError|No results found")
 RETRIES = (4.0, 12.0)
@@ -28,7 +33,11 @@ _state = {"blocked": 0.0, "reported": 0.0}
 
 
 def blocked(text: str | None) -> bool:
-    return bool(text and BLOCKED.search(text))
+    return bool(text and BLOCKED.search(text)) and not login_required(text)
+
+
+def login_required(text: str | None) -> bool:
+    return bool(text and LOGIN.search(text))
 
 
 def forbidden(text: str | None) -> bool:

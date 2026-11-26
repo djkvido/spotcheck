@@ -588,8 +588,10 @@ function cvDiscard(entries) {
   if (uploaded.length) api("/api/convert/discard", "POST", { paths: uploaded }).catch(() => {});
 }
 
+const APP_TABS = ["library", "download", "convert"];
+
 function setAppTab(tab) {
-  state.app = tab === "convert" ? "convert" : "library";
+  state.app = APP_TABS.includes(tab) ? tab : "library";
   document.body.dataset.app = state.app;
   $$("[data-app-tab]").forEach((b) => {
     const on = b.dataset.appTab === state.app;
@@ -598,11 +600,11 @@ function setAppTab(tab) {
     b.tabIndex = on ? 0 : -1;
   });
   $("#converter").hidden = state.app !== "convert";
-  $(".shell").hidden = state.app === "convert";
-  if (state.app === "convert") {
-    if (!cv.loaded) { cvRender(); cvLoad(); }
-    if (state.openKey) closeDrawer();
-  }
+  $("#downloader").hidden = state.app !== "download";
+  $(".shell").hidden = state.app !== "library";
+  if (state.app === "convert" && !cv.loaded) { cvRender(); cvLoad(); }
+  if (state.app === "download" && !dl.loaded) { dlRender(); dlLoad(); }
+  if (state.app !== "library" && state.openKey) closeDrawer();
   rememberView();
 }
 
@@ -612,7 +614,8 @@ $(".app-tabs").addEventListener("click", (event) => {
 });
 $(".app-tabs").addEventListener("keydown", (event) => {
   if (!["ArrowLeft", "ArrowRight"].includes(event.key)) return;
-  const next = state.app === "convert" ? "library" : "convert";
+  const step = event.key === "ArrowRight" ? 1 : APP_TABS.length - 1;
+  const next = APP_TABS[(APP_TABS.indexOf(state.app) + step) % APP_TABS.length];
   setAppTab(next);
   $(`[data-app-tab="${next}"]`).focus();
 });
@@ -704,8 +707,8 @@ $("#converter").addEventListener("drop", (event) => {
   if (!cv.loaded) return;
   [...(event.dataTransfer?.files || [])].forEach(cvUpload);
 });
-window.addEventListener("dragover", (event) => { if (state.app === "convert") event.preventDefault(); });
-window.addEventListener("drop", (event) => { if (state.app === "convert") event.preventDefault(); });
+window.addEventListener("dragover", (event) => { if (state.app !== "library") event.preventDefault(); });
+window.addEventListener("drop", (event) => { if (state.app !== "library") event.preventDefault(); });
 
 cvRestore();
 setAppTab(state.app);

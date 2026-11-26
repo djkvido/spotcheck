@@ -48,6 +48,9 @@ class Checks:
         finally:
             for future in pending:
                 future.cancel()
+        if not tr.get("duration"):
+            tr["duration"] = round(length, 1)
+            tr["source_duration"] = tr["duration"]
         expected = float(tr["duration"])
         diff = length - expected
         extra = diff - lead - tail
