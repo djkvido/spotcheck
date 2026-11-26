@@ -19,7 +19,8 @@ FORBIDDEN = re.compile(
 )
 LOGIN = re.compile(
     r"login required|log in to|you need to log in|requires? authentication|only available for registered users|"
-    r"this content isn.t available right now|private video|video is private|content is not available",
+    r"this content isn.t available right now|private video|video is private|content is not available|"
+    r"empty media response",
     re.I,
 )
 ERROR_LINE = re.compile(r"\bERROR\b|Error:|AudioProviderError|DownloadError")

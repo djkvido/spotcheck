@@ -408,3 +408,167 @@ def test_audio_formats_follow_the_ffmpeg_in_use(monkeypatch):
         lambda refresh=False: {"ffmpeg": "f", "encoders": {"libmp3lame": {}, "aac": {}, "flac": {}}},
     )
     assert downloader.audio_formats() == ["mp3", "m4a", "flac"]
+
+
+def test_size_estimates_prefer_direct_formats_and_matching_codecs():
+    info = {
+        "duration": 100,
+        "formats": [
+            {"format_id": "140", "vcodec": "none", "acodec": "mp4a.40.2", "filesize": 1_600_000, "protocol": "https"},
+            {"format_id": "251", "vcodec": "none", "acodec": "opus", "filesize": 1_400_000, "protocol": "https"},
+            {
+                "format_id": "137",
+                "vcodec": "avc1.640028",
+                "acodec": "none",
+                "height": 1080,
+                "width": 1920,
+                "filesize": 20_000_000,
+                "protocol": "https",
+            },
+            {
+                "format_id": "248",
+                "vcodec": "vp9",
+                "acodec": "none",
+                "height": 1080,
+                "width": 1920,
+                "filesize": 15_000_000,
+                "protocol": "https",
+            },
+            {
+                "format_id": "hls-1080",
+                "vcodec": "avc1.640028",
+                "acodec": "mp4a",
+                "height": 1080,
+                "width": 1920,
+                "tbr": 9000,
+                "protocol": "m3u8_native",
+            },
+            {
+                "format_id": "22",
+                "vcodec": "avc1.64001F",
+                "acodec": "mp4a",
+                "height": 720,
+                "width": 1280,
+                "tbr": 1000,
+                "protocol": "https",
+            },
+        ],
+    }
+    found, audio = downloader.variants(info)
+    assert audio == {"aac": 1_600_000, "opus": 1_400_000, "best": 1_600_000}
+    full = found[0]
+    assert full["height"] == 1080 and full["exact"] is True
+    assert full["bytes"] == {"mp4": 21_600_000, "webm": 16_400_000, "mkv": 16_600_000}
+    small = found[1]
+    assert small["height"] == 720 and small["bytes"]["mp4"] == 12_500_000 and small["exact"] is False
+
+
+def test_failures_are_named_and_details_lose_cookie_advice():
+    assert downloader.failure("ERROR: Video unavailable") == "download_unavailable"
+    assert downloader.failure("ERROR: The uploader has not made this video available in your country") == "download_geo"
+    assert downloader.failure("ERROR: Requested format is not available") == "download_format"
+    assert downloader.failure("ERROR: This live event will begin in 3 hours") == "download_live"
+    assert downloader.failure("ERROR: Login required to view this post") == "login_required"
+    assert downloader.failure("something strange") == "download_failed"
+    detail = downloader.clean_detail(
+        "ERROR: [instagram] x: Requested content is not available. Use --cookies-from-browser or --cookies\n"
+        "See https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp\n"
+    )
+    assert detail == "ERROR: [instagram] x: Requested content is not available"
+
+
+def test_webm_is_recoded_and_offered_only_with_its_encoders(monkeypatch):
+    webm = joined(Options(mode="video", container="webm"))
+    assert "--merge-output-format webm/mkv --recode-video webm" in webm and "--remux-video" not in webm
+    assert "--limit-rate 2M" in " ".join(
+        downloader.build_command(["yt-dlp"], Options(mode="video"), VIDEO, Path("w"), "ffmpeg", "2M")
+    )
+    assert "--limit-rate" not in " ".join(
+        downloader.build_command(["yt-dlp"], Options(mode="video"), VIDEO, Path("w"), "ffmpeg", "9G")
+    )
+    caps = {"ffmpeg": "f", "encoders": {"libx264": {}, "aac": {}}}
+    monkeypatch.setattr(convert, "capabilities", lambda refresh=False: caps)
+    assert downloader.containers() == ["mp4", "mkv"]
+    caps["encoders"].update({"libvpx-vp9": {}, "libopus": {}})
+    assert downloader.containers() == ["mp4", "mkv", "webm"]
+
+
+def test_paused_queue_waits_and_limit_is_checked(workspace, monkeypatch, tmp_path):
+    fake_download(monkeypatch, lambda workdir: (workdir / "Clip [id].mp4").write_bytes(b"x"))
+    bus = Bus()
+    fetcher = Downloader(bus)
+    assert fetcher.configure(paused=True, limit="5M") == {"paused": True, "limit": "5M"}
+    fetcher.add([{"url": VIDEO, "title": "Clip"}], {"mode": "video"}, tmp_path / "out")
+    time.sleep(0.5)
+    assert fetcher.public()[0]["state"] == "queued"
+    with pytest.raises(JobError, match="invalid_option"):
+        fetcher.configure(limit="1T")
+    assert fetcher.configure(paused=False, limit="none") == {"paused": False, "limit": None}
+    wait(fetcher)
+    assert fetcher.public()[0]["state"] == "done"
+    assert {"type": "download_settings", "paused": True, "limit": "5M"} in bus.events
+
+
+def test_entries_keep_their_own_options_and_duplicates_are_merged(workspace, monkeypatch, tmp_path):
+    fake_download(monkeypatch, lambda workdir: None)
+    monkeypatch.setattr(downloader, "containers", lambda: ["mp4", "mkv"])
+    fetcher = Downloader(Bus())
+    fetcher.configure(paused=True)
+    other = "https://www.youtube.com/watch?v=aaaaaaaaaaa"
+    ids = fetcher.add(
+        [{"url": VIDEO}, {"url": other, "options": {"mode": "audio", "audio": "flac"}}, {"url": VIDEO}],
+        {"mode": "video", "container": "mkv"},
+        tmp_path,
+    )
+    assert ids[0] == ids[2] and len(set(ids)) == 2
+    items = {i["url"]: i for i in fetcher.public()}
+    assert items[VIDEO]["options"]["container"] == "mkv" and items[VIDEO]["ext"] == "mkv"
+    assert items[other]["options"]["mode"] == "audio" and items[other]["ext"] == "flac"
+    assert fetcher.add([{"url": VIDEO}], {"mode": "video", "container": "mkv"}, tmp_path) == [ids[0]]
+    assert len(fetcher.add([{"url": VIDEO}], {"mode": "video", "container": "mp4"}, tmp_path)) == 1
+    assert len(fetcher.public()) == 3
+    with pytest.raises(JobError, match="preset_unavailable"):
+        fetcher.add([{"url": VIDEO}], {"mode": "video", "container": "webm"}, tmp_path)
+    fetcher.cancel_all()
+    fetcher.close()
+
+
+def test_the_real_quality_is_described(workspace, monkeypatch, tmp_path):
+    fetcher = Downloader(Bus())
+    item = {"notes": [], "extra_files": [], "actual": None}
+    info = {"video": {"width": 1280, "height": 720, "codec": "h264"}, "audio": {"codec": "aac"}, "duration": 19}
+    monkeypatch.setattr(convert, "probe", lambda path: info)
+    fetcher._describe(item, Options(mode="video", height=1080, subtitles="embed"), tmp_path / "x.mp4")
+    assert item["actual"] == {"height": 720, "vcodec": "h264", "acodec": "aac", "duration": 19}
+    assert item["notes"] == ["lower_quality", "no_subtitles"]
+    item = {"notes": [], "extra_files": ["a.srt"], "actual": None}
+    fetcher._describe(item, Options(mode="video", height=720, subtitles="files"), tmp_path / "x.mp4")
+    assert item["notes"] == []
+
+    def broken(path):
+        raise JobError("probe_failed")
+
+    monkeypatch.setattr(convert, "probe", broken)
+    item = {"notes": [], "extra_files": [], "actual": None}
+    fetcher._describe(item, Options(mode="video"), tmp_path / "x.mp4")
+    assert item["actual"] is None
+
+
+def test_download_folder_space_and_settings_endpoints(client, monkeypatch, tmp_path):
+    opened = []
+    monkeypatch.setattr("spotcheck.fileops.reveal", lambda path: opened.append(path))
+    space = client.post("/api/download/space", json={"initial": str(tmp_path)}, headers=HEADERS).json()
+    assert space["folder"] == str(tmp_path) and space["free"] > 0
+    assert client.post("/api/download/space", json={"initial": "rel"}, headers=HEADERS).status_code == 422
+    target = tmp_path / "new"
+    assert client.post("/api/download/open-folder", json={"initial": str(target)}, headers=HEADERS).json()["ok"]
+    assert target.is_dir() and opened == [target]
+    settings = client.post("/api/download/settings", json={"paused": True, "limit": "1M"}, headers=HEADERS)
+    assert settings.json() == {"paused": True, "limit": "1M"}
+    assert client.get("/api/download").json()["paused"] is True
+    bad = client.post("/api/download/settings", json={"limit": "7Q"}, headers=HEADERS)
+    assert bad.status_code == 422
+    client.post("/api/download/settings", json={"paused": False, "limit": "none"}, headers=HEADERS)
+    assert client.post("/api/download/nope/open", headers=HEADERS).status_code == 404
+    assert client.post("/api/download/nope/reveal", headers=HEADERS).status_code == 404
+    assert client.post("/api/download/nope/cancel", headers=HEADERS).json() == {"ok": False}

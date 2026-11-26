@@ -605,6 +605,7 @@ function setAppTab(tab) {
   if (state.app === "convert" && !cv.loaded) { cvRender(); cvLoad(); }
   if (state.app === "download" && !dl.loaded) { dlRender(); dlLoad(); }
   if (state.app !== "library" && state.openKey) closeDrawer();
+  if (dl.loaded) dlUpdateTitle();
   rememberView();
 }
 

@@ -138,8 +138,14 @@ class ProbeRequest(BaseModel):
     url: str = Field(min_length=1, max_length=4000)
 
 
+class DownloadSettings(BaseModel):
+    paused: bool | None = None
+    limit: str | None = Field(None, max_length=10)
+
+
 class DownloadEntry(BaseModel):
     url: str = Field(min_length=1, max_length=4000)
+    options: dict[str, Any] | None = None
     title: str | None = Field(None, max_length=500)
     uploader: str | None = Field(None, max_length=300)
     duration: float | None = None
@@ -294,6 +300,14 @@ def pick_files(initial: str | None) -> list[str]:
             finally:
                 root.destroy()
     return [str(Path(c)) for c in chosen if c.strip()]
+
+
+def free_space(folder: Path) -> int | None:
+    existing = next((p for p in (folder, *folder.parents) if p.exists()), None)
+    try:
+        return shutil.disk_usage(existing).free if existing else None
+    except OSError:
+        return None
 
 
 def image_type(data: bytes) -> str | None:
@@ -944,11 +958,15 @@ def create_app(automation: bool = True) -> FastAPI:
             "items": fetcher.public(),
             "audio_formats": downloader.audio_formats(),
             "containers": downloader.CONTAINERS,
+            "available_containers": downloader.containers(),
             "heights": downloader.HEIGHTS,
             "bitrates": downloader.BITRATES,
             "default_folder": str(convert.default_folder()),
             "picker": folder_picker_available(),
             "ready": bool(downloader.tool()),
+            "limits": downloader.RATE_LIMITS,
+            "free": free_space(convert.default_folder()),
+            **fetcher.settings(),
         }
 
     @app.get("/api/download")
@@ -986,6 +1004,32 @@ def create_app(automation: bool = True) -> FastAPI:
             return {"items": await asyncio.to_thread(run)}
         except JobError as exc:
             raise convert_error(exc) from exc
+
+    @app.post("/api/download/space")
+    async def download_space(body: FolderRequest) -> dict[str, Any]:
+        try:
+            folder = convert.output_folder(body.initial) if body.initial else convert.default_folder()
+        except JobError as exc:
+            raise convert_error(exc) from exc
+        return {"free": await asyncio.to_thread(free_space, folder), "folder": str(folder)}
+
+    @app.post("/api/download/settings")
+    async def download_settings(body: DownloadSettings) -> dict[str, Any]:
+        try:
+            return fetcher.configure(body.paused, body.limit)
+        except JobError as exc:
+            raise convert_error(exc) from exc
+
+    @app.post("/api/download/{item_id}/open")
+    async def open_download(item_id: str) -> dict[str, bool]:
+        item = fetcher.find(item_id)
+        if item is None or not item["output"] or not Path(item["output"]).is_file():
+            raise HTTPException(404, "path_not_found")
+        try:
+            fileops.open_file(Path(item["output"]))
+        except OSError as exc:
+            raise HTTPException(500, "open_failed") from exc
+        return {"ok": True}
 
     @app.post("/api/download/clear")
     async def clear_downloads() -> dict[str, int]:

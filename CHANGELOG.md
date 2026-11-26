@@ -4,6 +4,22 @@ Notable changes of each release. The format follows [Keep a Changelog](https://k
 
 ## Unreleased
 
+### Added
+
+- **A Download tab** for videos and sound from YouTube, YouTube Music, Facebook, Instagram, SoundCloud, Bandcamp, Vimeo and over a thousand other sites. Paste one or more links anywhere on the tab and each one is analysed at once: its title, length, available qualities, subtitles and the estimated size for the chosen format are shown before anything is downloaded.
+- Video as MP4, MKV or WebM in the best quality or limited to 8K, 4K, 1440p, 1080p, 720p and lower, with optional HDR; sound only as MP3, M4A, Opus, OGG, FLAC or WAV. Formats that the installed FFmpeg cannot produce are not offered.
+- Subtitles in the languages you choose, embedded in the video or saved as SRT files, and the thumbnail and details embedded in the file.
+- Playlists and channels list their items with select all, invert, filter and Shift-click ranges; each link can override the format chosen for all.
+- A download queue that runs three downloads at a time with progress, speed and remaining time, and can be paused, limited in speed, cancelled and retried. Finished items can be played or shown in their folder, and the real quality is shown, with a note when the site offered less than asked for or no subtitles.
+- Before starting, the total size, the destination and the free space on that disk are shown, with a warning when the space is not enough. The progress is also shown in the window title, and an optional notification announces the end of a batch.
+- Clear explanations of why a download failed: private or login-only content, removed videos, region restrictions, live streams that have not started, unsupported links and sites that ask to wait. A site that asks to wait is retried after a pause.
+- Public **Facebook and Instagram** videos and reels can be added to the library as single songs. The title is taken from the caption, without counters, hashtags and mentions, and a missing length is read from the downloaded file.
+
+### Changed
+
+- The terms of use (version 3) mention the downloader and Facebook and Instagram, so they are shown once again to be accepted.
+- An existing file is never overwritten by a download; a cancelled or failed download leaves nothing behind.
+
 ## 1.2.3 - 2026-11-20
 
 ### Fixed

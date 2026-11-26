@@ -2151,6 +2151,7 @@ function connectEvents() {
         break;
       case "download":
       case "download_list":
+      case "download_settings":
         dlOnEvent(event);
         break;
       case "convert":

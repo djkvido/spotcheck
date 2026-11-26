@@ -1,12 +1,12 @@
 # Podmínky použití SpotCheck
 
-Verze 2, 26. října 2026. Anglická verze: [TERMS.md](TERMS.md).
+Verze 3, 27. listopadu 2026. Anglická verze: [TERMS.md](TERMS.md).
 
 SpotCheck tě požádá o souhlas s těmito podmínkami při instalaci a při prvním spuštění. Pokud s nimi nesouhlasíš, SpotCheck neinstaluj a nepoužívej.
 
 ## 1. Co je SpotCheck
 
-SpotCheck je hobby open-source projekt, který vydává djkvido na https://github.com/djkvido/spotcheck. Pomáhá udržovat pořádek v místní hudební knihovně: načte seznamy skladeb z playlistů, které mu zadáš, najde skladby ve veřejně dostupných zdrojích, každý soubor porovná s oficiální ukázkou a změří jeho skutečnou kvalitu zvuku. Jeho převodník převádí zvukové a video soubory mezi formáty přímo v tvém počítači.
+SpotCheck je hobby open-source projekt, který vydává djkvido na https://github.com/djkvido/spotcheck. Pomáhá udržovat pořádek v místní hudební knihovně: načte seznamy skladeb z playlistů, které mu zadáš, najde skladby ve veřejně dostupných zdrojích, každý soubor porovná s oficiální ukázkou a změří jeho skutečnou kvalitu zvuku. Jeho stahování ukládá videa a zvuk z odkazů, které vložíš, a jeho převodník převádí zvukové a video soubory mezi formáty přímo v tvém počítači.
 
 SpotCheck je svobodný software pod licencí GNU General Public License verze 3 nebo novější (GPL). Kopírování, úpravy a šíření SpotChecku se řídí licencí GPL. Tyto podmínky popisují, za co při používání odpovídáš ty. Neomezují žádné právo, které ti dává GPL.
 
@@ -24,7 +24,7 @@ Používáním SpotChecku potvrzuješ, že:
 
 - ho používáš pro vlastní osobní a nekomerční potřebu;
 - zpracováváš jen obsah, který smíš podle práva své země stáhnout, zkopírovat a uchovávat;
-- dodržuješ podmínky služeb, které přes něj používáš, například Spotify, YouTube, SoundCloud, Bandcamp, Deezer a Apple;
+- dodržuješ podmínky služeb, které přes něj používáš, například Spotify, YouTube, SoundCloud, Bandcamp, Facebook, Instagram, Deezer a Apple;
 - ho nepoužíváš ke sdílení, šíření ani prodeji obsahu chráněného autorským právem.
 
 Za to, co pomocí SpotChecku stáhneš a co se soubory uděláš, odpovídáš výhradně ty.
@@ -33,7 +33,8 @@ Za to, co pomocí SpotChecku stáhneš a co se soubory uděláš, odpovídáš v
 
 SpotCheck běží na tvém počítači a přijímá spojení jen z něj. Nemá účet, analytiku ani telemetrii a jeho autorům o tobě nic neposílá. Připojuje se k:
 
-- službám, na kterých jsou tvoje playlisty a skladby (Spotify, YouTube, YouTube Music, SoundCloud, Bandcamp), aby načetl seznamy skladeb a stáhl zvuk;
+- službám, na kterých jsou tvoje playlisty a skladby (Spotify, YouTube, YouTube Music, SoundCloud, Bandcamp, Facebook, Instagram), aby načetl seznamy skladeb a stáhl zvuk;
+- stránkám odkazů, které vložíš na záložce Stahování, aby zjistil, co je k dispozici, a stáhl to;
 - Deezeru a iTunes Search API kvůli oficiálním ukázkám a metadatům a ke stránkám s texty písní, které používá spotDL (Genius, AZLyrics, Musixmatch);
 - PyPI (pypi.org), aby na stránce Závislosti ukázal dostupné aktualizace svých součástí, a aby stáhl aktualizaci yt-dlp, když o ni požádáš;
 - GitHubu (github.com) a stránkám, ze kterých se distribuuje FFmpeg a Deno, jen když spouštíš SpotCheck ze zdrojového kódu a požádáš ho o instalaci FFmpeg nebo Deno;

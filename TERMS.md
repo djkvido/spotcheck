@@ -1,12 +1,12 @@
 # SpotCheck Terms of Use
 
-Version 2, 26 October 2026. Czech translation: [TERMS.cs.md](TERMS.cs.md).
+Version 3, 27 November 2026. Czech translation: [TERMS.cs.md](TERMS.cs.md).
 
 SpotCheck asks you to accept these terms when you install it and when you start it for the first time. If you do not agree with them, do not install or use SpotCheck.
 
 ## 1. What SpotCheck is
 
-SpotCheck is a hobby open-source project by djkvido, published at https://github.com/djkvido/spotcheck. It helps you keep a local music library in order: it reads the track lists of playlists you give it, finds the tracks on publicly available sources, checks every file against the official preview and measures its sound quality. Its converter converts audio and video files on your computer between formats.
+SpotCheck is a hobby open-source project by djkvido, published at https://github.com/djkvido/spotcheck. It helps you keep a local music library in order: it reads the track lists of playlists you give it, finds the tracks on publicly available sources, checks every file against the official preview and measures its sound quality. Its downloader saves videos and sound from links you paste, and its converter converts audio and video files on your computer between formats.
 
 SpotCheck is free software under the GNU General Public License, version 3 or later (GPL). The GPL governs copying, modifying and distributing SpotCheck. These terms describe what you are responsible for when you use it. They do not limit any right the GPL gives you.
 
@@ -24,7 +24,7 @@ By using SpotCheck you confirm that:
 
 - you use it for your own personal, non-commercial use;
 - you only process content that you are allowed to download, copy and keep under the law of your country;
-- you respect the terms of the services you use through it, such as Spotify, YouTube, SoundCloud, Bandcamp, Deezer and Apple;
+- you respect the terms of the services you use through it, such as Spotify, YouTube, SoundCloud, Bandcamp, Facebook, Instagram, Deezer and Apple;
 - you do not use it to share, distribute or sell copyrighted content.
 
 You alone are responsible for what you download with SpotCheck and for what you do with the files.
@@ -33,7 +33,8 @@ You alone are responsible for what you download with SpotCheck and for what you 
 
 SpotCheck runs on your computer and only accepts connections from it. It has no account, no analytics and no telemetry, and it sends nothing about you to its authors. It connects to:
 
-- the services that host your playlists and tracks (Spotify, YouTube, YouTube Music, SoundCloud, Bandcamp) to read track lists and download audio;
+- the services that host your playlists and tracks (Spotify, YouTube, YouTube Music, SoundCloud, Bandcamp, Facebook, Instagram) to read track lists and download audio;
+- the sites of the links you paste in the Download tab, to read what is available and download it;
 - Deezer and the iTunes Search API for official previews and metadata, and the lyrics sites spotDL uses to add lyrics (Genius, AZLyrics, Musixmatch);
 - PyPI (pypi.org) to show available updates of its components on the Dependencies page, and to download an update of yt-dlp when you ask for it;
 - GitHub (github.com) and the distribution sites of FFmpeg and Deno, only when you run SpotCheck from source and ask it to install FFmpeg or Deno;

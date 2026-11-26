@@ -172,6 +172,15 @@ def reveal(target: Path) -> None:
         subprocess.Popen(["xdg-open", str(target if target.is_dir() else target.parent)])
 
 
+def open_file(target: Path) -> None:
+    if sys.platform == "win32":
+        os.startfile(str(target))
+    elif sys.platform == "darwin":
+        subprocess.Popen(["open", str(target)])
+    else:
+        subprocess.Popen(["xdg-open", str(target)])
+
+
 def remove_leftovers(folder: Path) -> int:
     removed = 0
     if folder.is_dir():

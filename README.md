@@ -6,7 +6,7 @@
 
 **Is every file in your music library really the song it should be?** SpotCheck checks it for you. Each track is compared with the official preview by audio fingerprint, and its length, silence and real sound quality are measured, so you only listen to the few tracks that need it.
 
-Open source, runs on your computer, for Windows and macOS. It also includes a **format converter** for audio and video files.
+Open source, runs on your computer, for Windows and macOS. It also includes a **downloader** for videos and sound from YouTube, Facebook, Instagram and over a thousand other sites, and a **format converter** for audio and video files.
 
 **[Download for Windows and macOS](https://github.com/djkvido/spotcheck/releases/latest)** · [How it works](#how-it-works) · [Run from source](#running-from-source)
 
@@ -43,7 +43,7 @@ Checking a whole library by ear takes hours. SpotCheck leaves you only the track
 **Load**
 
 - **Playlists, albums and single songs from several services:** Spotify playlists and albums (through spotDL), YouTube and YouTube Music playlists, SoundCloud sets and Bandcamp albums (through yt-dlp). Tracks of the latter are matched with the official release on Deezer, so their length and preview are verified like Spotify tracks.
-- **Single songs** from Spotify, YouTube, SoundCloud and Bandcamp: paste the link of one song and it is collected in the **Singles** list, in its own folder, and checked like every other track.
+- **Single songs** from Spotify, YouTube, SoundCloud and Bandcamp, and public **Facebook and Instagram** videos and reels: paste the link of one song and it is collected in the **Singles** list, in its own folder, and checked like every other track. The title of a post is taken from its caption, without counters, hashtags and mentions.
 - **Downloads** into one folder per playlist, with tags and cover art. Choose **Opus** or **M4A** to keep YouTube's own stream without re-encoding, or **MP3** at a bitrate of your choice.
 
 **Verify and measure**
@@ -73,6 +73,14 @@ Checking a whole library by ear takes hours. SpotCheck leaves you only the track
 - **Tuning** of every threshold, search template and source, with defaults that work for most libraries.
 - **CSV export** of the current view, and **reports from the command line** for scheduled checks without opening the app.
 - **English and Czech UI**, picked from your browser language and switchable in the top bar.
+
+**Download videos and sound**
+
+- **A Download tab** for videos, playlists and channels from YouTube, YouTube Music, Facebook, Instagram, SoundCloud, Bandcamp, Vimeo and over a thousand other sites that yt-dlp supports. Paste a link and SpotCheck shows what is available before anything is downloaded.
+- **Video** as MP4 (H.264 and AAC where the site offers them, so it plays everywhere), MKV or WebM, in the best available quality or limited to 8K, 4K, 1440p, 1080p, 720p and lower, with optional HDR. **Sound only** as MP3, M4A, Opus, OGG, FLAC or WAV.
+- **Subtitles** in the languages you choose, embedded in the video or saved as SRT files, and the thumbnail and details embedded in the file.
+- **Playlists and channels:** choose which items to download; several items are downloaded at the same time, each with its progress, speed and remaining time, and can be cancelled or retried.
+- **Safe and quiet:** an existing file is never overwritten, a cancelled or failed download leaves nothing behind, a site that asks to wait is retried after a pause, and private or login-only content is reported clearly. SpotCheck never signs in to any service.
 
 **Convert formats**
 

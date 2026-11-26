@@ -58,6 +58,30 @@ PHASES = {
     "[SubtitlesConvertor]": "finishing",
 }
 LANG = re.compile(r"^[A-Za-z]{2,3}(?:[-_][A-Za-z0-9]{2,8})*$")
+RATE_LIMITS = ("500K", "1M", "2M", "5M", "10M", "20M")
+FAILURES = (
+    (
+        "download_unavailable",
+        re.compile(
+            r"video unavailable|this video is unavailable|has been removed|no longer available|has been terminated",
+            re.I,
+        ),
+    ),
+    ("download_page_missing", re.compile(r"HTTP Error 404|404: Not Found", re.I)),
+    (
+        "download_geo",
+        re.compile(
+            r"available in your country|geo.?restrict|blocked it in your country|not available from your location", re.I
+        ),
+    ),
+    (
+        "download_live",
+        re.compile(r"live event will begin|premieres in|this live event|is a live stream|is currently live", re.I),
+    ),
+    ("download_format", re.compile(r"requested format is not available", re.I)),
+    ("download_unsupported", re.compile(r"unsupported url", re.I)),
+)
+COOKIE_ADVICE = re.compile(r"\.?\s*(?:Use|Also see|See)\s[^\n]*cookies[^\n]*", re.I)
 UNSAFE_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 
 
@@ -115,9 +139,30 @@ def tool() -> str | None:
     return convert.capabilities()["ffmpeg"]
 
 
+def containers() -> list[str]:
+    encoders = convert.capabilities()["encoders"]
+    webm = "libvpx-vp9" in encoders and "libopus" in encoders
+    return [c for c in CONTAINERS if c != "webm" or webm]
+
+
 def audio_formats() -> list[str]:
     encoders = convert.capabilities()["encoders"]
     return [fmt for fmt, needs in AUDIO_ENCODERS.items() if any(name in encoders for name in needs)]
+
+
+def failure(text: str, result: subprocess.CompletedProcess | None = None) -> str:
+    if result is not None:
+        code = origins.refusal(result, text)
+        if code:
+            return code
+    elif ytdlp.login_required(text):
+        return "login_required"
+    return next((code for code, pattern in FAILURES if pattern.search(text)), "download_failed")
+
+
+def clean_detail(text: str) -> str:
+    lines = [COOKIE_ADVICE.sub("", line).rstrip() for line in text.splitlines()]
+    return "\n".join(line for line in lines if line.strip() and "cookies" not in line.lower())[-1200:]
 
 
 def ytdlp_base() -> list[str]:
@@ -141,7 +186,9 @@ def output_ext(options: Options) -> str:
     return options.container if options.mode == "video" else AUDIO_EXT[options.audio]
 
 
-def build_command(base: list[str], options: Options, url: str, workdir: Path, ffmpeg: str) -> list[str]:
+def build_command(
+    base: list[str], options: Options, url: str, workdir: Path, ffmpeg: str, limit: str | None = None
+) -> list[str]:
     template = f"%(title).{NAME_LIMIT}B [%(id)s].%(ext)s"
     cmd = [
         *base,
@@ -161,9 +208,12 @@ def build_command(base: list[str], options: Options, url: str, workdir: Path, ff
         "-o",
         template,
     ]
+    if limit in RATE_LIMITS:
+        cmd += ["--limit-rate", limit]
     if options.mode == "video":
-        cmd += ["-f", "bv*+ba/b", "-S", format_sort(options), "--merge-output-format", options.container]
-        cmd += ["--remux-video", options.container]
+        merge = "webm/mkv" if options.container == "webm" else options.container
+        cmd += ["-f", "bv*+ba/b", "-S", format_sort(options), "--merge-output-format", merge]
+        cmd += ["--recode-video" if options.container == "webm" else "--remux-video", options.container]
         if options.thumbnail and options.container != "webm":
             cmd += ["--embed-thumbnail"]
         if options.subtitles != "none":
@@ -226,6 +276,66 @@ def _heights(info: dict[str, Any]) -> list[int]:
     if not found and _resolution(info):
         found.add(_resolution(info))
     return sorted(found, reverse=True)
+
+
+def _size(f: dict[str, Any], duration: float | None) -> tuple[float | None, bool]:
+    if f.get("filesize"):
+        return float(f["filesize"]), True
+    if f.get("filesize_approx"):
+        return float(f["filesize_approx"]), False
+    if f.get("tbr") and duration:
+        return float(f["tbr"]) * 125 * duration, False
+    return None, False
+
+
+def _pick(formats: list[dict[str, Any]], tiers: tuple[tuple[str, ...], ...], key: str) -> dict[str, Any] | None:
+    direct = [f for f in formats if not str(f.get("protocol") or "").startswith(("m3u8", "http_dash_segments"))]
+    pool = direct or formats
+    if not pool:
+        return None
+    for prefer in tiers:
+        preferred = [f for f in pool if str(f.get(key) or "").startswith(prefer)]
+        if preferred:
+            pool = preferred
+            break
+    return max(pool, key=lambda f: (bool(f.get("filesize")), f.get("tbr") or f.get("abr") or 0))
+
+
+def variants(info: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str, float]]:
+    duration = info.get("duration")
+    formats = info.get("formats") or []
+    video = [f for f in formats if f.get("vcodec") not in (None, "none") and _resolution(f)]
+    audio = [f for f in formats if f.get("vcodec") in (None, "none") and f.get("acodec") not in (None, "none")]
+    audio_sizes = {}
+    for name, tiers in (("aac", (("mp4a",),)), ("opus", (("opus",),)), ("best", ())):
+        picked = _pick(audio, tiers, "acodec")
+        size = _size(picked, duration)[0] if picked else None
+        if size:
+            audio_sizes[name] = size
+    result = []
+    for height in _heights(info):
+        fitting = [f for f in video if _resolution(f) <= height]
+        top = max(_resolution(f) for f in fitting)
+        level = [f for f in fitting if _resolution(f) == top]
+        best_fps = max(f.get("fps") or 0 for f in level)
+        level = [f for f in level if (f.get("fps") or 0) == best_fps]
+        sdr = [f for f in level if str(f.get("dynamic_range") or "SDR") == "SDR"] or level
+        sizes: dict[str, float | None] = {}
+        exact = True
+        for container, tiers, sound in (
+            ("mp4", (("avc1", "h264"),), "aac"),
+            ("webm", (("vp9", "vp09"),), "opus"),
+            ("mkv", (("av01",), ("vp9", "vp09")), "best"),
+        ):
+            picked = _pick(sdr, tiers, "vcodec")
+            size, known = _size(picked, duration) if picked else (None, False)
+            exact = exact and known
+            if size is not None and picked.get("acodec") in (None, "none"):
+                extra = audio_sizes.get(sound) or audio_sizes.get("best")
+                size = size + extra if extra else size
+            sizes[container] = round(size) if size else None
+        result.append({"height": height, "bytes": sizes, "exact": exact})
+    return result, {k: round(v) for k, v in audio_sizes.items()}
 
 
 def _has_audio(info: dict[str, Any]) -> bool:
@@ -293,11 +403,8 @@ def probe(url: str) -> dict[str, Any]:
     except ValueError:
         info = None
     if not isinstance(info, dict):
-        detail = (r.stderr or "").strip().splitlines()[-1:] or [""]
-        code = origins.refusal(r) or (
-            "download_unsupported" if "Unsupported URL" in (r.stderr or "") else "download_failed"
-        )
-        raise JobError(code, detail[0][:300])
+        stderr = r.stderr or ""
+        raise JobError(failure(stderr, r), clean_detail(stderr)[-300:])
     probe_id = uuid.uuid4().hex[:12]
     thumbs: dict[str, str] = {}
     if info.get("_type") == "playlist" or info.get("entries") is not None:
@@ -326,12 +433,16 @@ def probe(url: str) -> dict[str, Any]:
         if not info.get("formats") and not info.get("url"):
             raise JobError("download_no_media")
         heights = _heights(info)
+        sizes, audio_sizes = variants(info)
         result = {
             "probe": probe_id,
             "kind": "single",
             "url": url,
             **{k: v for k, v in _entry(info, url).items() if k != "url"},
             "heights": heights,
+            "variants": sizes,
+            "audio_bytes": audio_sizes,
+            "live": bool(info.get("is_live")),
             "video": bool(heights),
             "audio": _has_audio(info),
             "subtitles": sorted(k for k in (info.get("subtitles") or {}) if LANG.match(k) and k != "live_chat"),
@@ -357,6 +468,8 @@ class Downloader:
         self.order: list[str] = []
         self.threads: list[threading.Thread] = []
         self.workers = WORKERS
+        self.paused = False
+        self.limit: str | None = None
         self._closing = False
 
     @staticmethod
@@ -389,6 +502,21 @@ class Downloader:
             thread.start()
             self.threads.append(thread)
 
+    def settings(self) -> dict[str, Any]:
+        return {"paused": self.paused, "limit": self.limit}
+
+    def configure(self, paused: bool | None = None, limit: str | None = None) -> dict[str, Any]:
+        with self.cond:
+            if paused is not None:
+                self.paused = paused
+            if limit is not None:
+                if limit != "none" and limit not in RATE_LIMITS:
+                    raise JobError("invalid_option")
+                self.limit = None if limit == "none" else limit
+            self.cond.notify_all()
+        self.bus.emit({"type": "download_settings", **self.settings()})
+        return self.settings()
+
     def add(self, entries: list[dict[str, Any]], raw_options: dict[str, Any], folder: Path) -> list[str]:
         options = Options.from_dict(raw_options)
         if not tool():
@@ -401,6 +529,23 @@ class Downloader:
                 url = str(entry.get("url") or "")
                 if not url.startswith("https://"):
                     raise JobError("download_invalid_url")
+                raw = entry.get("options")
+                own = Options.from_dict(raw) if isinstance(raw, dict) else options
+                if own.mode == "audio" and own.audio not in audio_formats():
+                    raise JobError("preset_unavailable")
+                if own.mode == "video" and own.container not in containers():
+                    raise JobError("preset_unavailable")
+                pending = next(
+                    (
+                        i
+                        for i in self.items.values()
+                        if i["url"] == url and i["options"] == own.public() and i["state"] in ("queued", "running")
+                    ),
+                    None,
+                )
+                if pending:
+                    ids.append(pending["id"])
+                    continue
                 item = {
                     "id": uuid.uuid4().hex[:10],
                     "url": url,
@@ -409,8 +554,8 @@ class Downloader:
                     "duration": entry.get("duration"),
                     "probe": entry.get("probe"),
                     "thumb": entry.get("thumb"),
-                    "options": options.public(),
-                    "ext": output_ext(options),
+                    "options": own.public(),
+                    "ext": output_ext(own),
                     "folder": str(folder),
                     "state": "queued",
                     "phase": None,
@@ -420,12 +565,14 @@ class Downloader:
                     "size": None,
                     "output": None,
                     "extra_files": [],
+                    "actual": None,
+                    "notes": [],
                     "error": None,
                     "detail": None,
                     "created": time.time(),
                     "started": None,
                     "finished": None,
-                    "_options": options,
+                    "_options": own,
                     "_cancel": False,
                     "_proc": None,
                     "_emitted": 0.0,
@@ -436,7 +583,7 @@ class Downloader:
             self._prune()
             self._ensure_workers()
             self.cond.notify_all()
-        for item_id in ids:
+        for item_id in dict.fromkeys(ids):
             self._emit(self.items[item_id])
         return ids
 
@@ -451,6 +598,8 @@ class Downloader:
                 excess -= 1
 
     def _next(self) -> dict[str, Any] | None:
+        if self.paused:
+            return None
         return next((self.items[i] for i in self.order if self.items[i]["state"] == "queued"), None)
 
     def _worker(self) -> None:
@@ -462,7 +611,7 @@ class Downloader:
                     item = self._next()
                 if self._closing:
                     return
-                item["state"], item["started"] = "running", time.time()
+                item["state"], item["started"], item["phase"] = "running", time.time(), "preparing"
             self._emit(item)
             try:
                 self._download(item)
@@ -488,6 +637,8 @@ class Downloader:
                 placed = self._place(item, workdir)
                 if not placed:
                     outcome, item["error"] = "failed", "download_empty_output"
+                else:
+                    self._describe(item, options, placed[0])
         except OSError as exc:
             outcome, item["error"], item["detail"] = "failed", "file_locked", str(exc)[:300]
         finally:
@@ -498,7 +649,7 @@ class Downloader:
             item["state"] = outcome
 
     def _run(self, item: dict[str, Any], options: Options, workdir: Path) -> str:
-        cmd = build_command(ytdlp_base(), options, item["url"], workdir, tool() or analysis.ffmpeg())
+        cmd = build_command(ytdlp_base(), options, item["url"], workdir, tool() or analysis.ffmpeg(), self.limit)
         lines: list[str] = []
         state = {"streams": 1, "index": -1, "last": time.monotonic()}
         stalled = threading.Event()
@@ -573,11 +724,31 @@ class Downloader:
             return "failed"
         if result is None or result.returncode != 0:
             detail = "\n".join(lines[-6:])
-            item["error"] = origins.refusal(result, detail) if result is not None else None
-            item["error"] = item["error"] or ("download_format" if "Requested format" in detail else "download_failed")
-            item["detail"] = detail or None
+            item["error"] = failure(detail, result)
+            item["detail"] = clean_detail(detail) or None
             return "failed"
         return "done"
+
+    def _describe(self, item: dict[str, Any], options: Options, path: Path) -> None:
+        try:
+            info = convert.probe(path)
+        except JobError:
+            return
+        video = info.get("video") or {}
+        sides = [v for v in (video.get("width"), video.get("height")) if isinstance(v, int) and v > 0]
+        item["actual"] = {
+            "height": min(sides) if sides else None,
+            "vcodec": video.get("codec"),
+            "acodec": (info.get("audio") or {}).get("codec"),
+            "duration": info.get("duration"),
+        }
+        wanted = options.height
+        if options.mode == "video" and wanted and item["actual"]["height"] and item["actual"]["height"] < wanted:
+            item["notes"].append("lower_quality")
+        if options.mode == "video" and options.subtitles == "embed" and not info.get("subtitles"):
+            item["notes"].append("no_subtitles")
+        if options.mode == "video" and options.subtitles == "files" and not item["extra_files"]:
+            item["notes"].append("no_subtitles")
 
     def _place(self, item: dict[str, Any], workdir: Path) -> list[Path]:
         folder = Path(item["folder"])
@@ -635,7 +806,7 @@ class Downloader:
             item = self.items.get(item_id)
             if not item or item["state"] not in ("failed", "cancelled"):
                 raise JobError("download_not_found")
-        entry = {k: item[k] for k in ("url", "title", "uploader", "duration", "probe", "thumb")}
+        entry = {k: item[k] for k in ("url", "title", "uploader", "duration", "probe", "thumb", "options")}
         new = self.add([entry], item["options"], Path(item["folder"]))
         with self.cond:
             if item_id in self.items:
