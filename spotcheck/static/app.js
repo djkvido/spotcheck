@@ -1742,6 +1742,10 @@ async function onUpdateAction(action, el) {
     if (action === "details") await openUpdateDialog();
     else if (action === "later") { state.updateLater = state.appUpdate?.version; renderBanner(); }
     else if (action === "install") {
+      const working = busy()
+        || [...(dl.items?.values() || [])].some((i) => !TERMINAL.has(i.state))
+        || [...(cv.items?.values() || [])].some((i) => !TERMINAL.has(i.state));
+      if (working && !await confirmDialog(t("update.busyTitle"), para(te("update.busy")), t("update.installAnyway"), true)) return;
       el.disabled = true;
       const { action: done } = await api("/api/update/install", "POST");
       say(t(done === "restart" ? "update.restarting" : "update.imageOpened"));
@@ -2160,6 +2164,7 @@ async function loadState() {
   const ticket = ++stateRequest;
   const data = await api("/api/state");
   if (ticket !== stateRequest) return;
+  if (state.version && data.version !== state.version) { location.reload(); return; }
   nameCache = null;
   state.project = data.project;
   state.library = data.library;

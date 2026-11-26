@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
+import http.client
 import json
 import logging
 import platform
@@ -73,10 +74,8 @@ def parse_release(data: dict[str, Any], current: str = __version__) -> dict[str,
         link, sums_link = installer.get("browser_download_url"), sums.get("browser_download_url")
         size = installer.get("size")
         if (
-            isinstance(link, str)
-            and isinstance(sums_link, str)
-            and link.startswith(DOWNLOADS)
-            and sums_link.startswith(DOWNLOADS)
+            link == f"{DOWNLOADS}v{tag}/{installer['name']}"
+            and sums_link == f"{DOWNLOADS}v{tag}/{SUMS}"
             and isinstance(size, int)
             and 0 < size <= MAX_SIZE
         ):
@@ -100,6 +99,17 @@ def expected_hash(sums: str, name: str) -> str | None:
     return None
 
 
+def file_hash(path: Path) -> str | None:
+    digest = hashlib.sha256()
+    try:
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(CHUNK), b""):
+                digest.update(chunk)
+    except OSError:
+        return None
+    return digest.hexdigest()
+
+
 class Updater:
     def __init__(self, bus) -> None:
         self.bus = bus
@@ -110,6 +120,7 @@ class Updater:
         self.progress = 0.0
         self.error: str | None = None
         self.file: Path | None = None
+        self.digest: str | None = None
         self._emitted = 0.0
         self._stop = threading.Event()
 
@@ -150,15 +161,19 @@ class Updater:
             with _open(API) as response:
                 data = json.loads(response.read(2_000_000).decode("utf-8"))
             release = parse_release(data) if isinstance(data, dict) else None
-        except (OSError, ValueError) as exc:
+        except (OSError, ValueError, http.client.HTTPException) as exc:
             log.info("Update check failed: %s", exc)
             return self.public()
         with self.lock:
             self.checked = time.monotonic()
-            changed = (self.release or {}).get("version") != (release or {}).get("version")
-            self.release = release
+            working = self.phase in ("downloading", "verifying", "ready", "installing")
+            changed = not working and (self.release or {}).get("version") != (release or {}).get("version")
+            if not working:
+                self.release = release
             if changed:
                 self.phase, self.progress, self.error, self.file = "idle", 0.0, None, None
+        if working:
+            return self.public()
         self.clean()
         if changed:
             self._emit()
@@ -166,7 +181,10 @@ class Updater:
 
     def watch(self) -> None:
         while not self._stop.is_set():
-            self.check(force=True)
+            try:
+                self.check(force=True)
+            except Exception:
+                log.exception("Update check failed")
             if self._stop.wait(CHECK_EVERY):
                 return
 
@@ -240,20 +258,25 @@ class Updater:
                 self._fail("update_checksum")
                 return
             part.replace(target)
-        except OSError as exc:
+        except (OSError, ValueError, http.client.HTTPException) as exc:
             log.warning("Update download failed: %s", exc)
             part.unlink(missing_ok=True)
             self._fail("update_download_failed")
             return
         with self.lock:
-            self.file, self.phase, self.progress = target, "ready", 1.0
+            self.file, self.phase, self.progress, self.digest = target, "ready", 1.0, expected
         self._emit()
 
     def install(self, shutdown) -> str:
         with self.lock:
             if self.phase != "ready" or not self.file or not self.file.is_file():
                 raise JobError("update_not_ready")
-            path = self.file
+            path, digest = self.file, self.digest
+        if file_hash(path) != digest:
+            with contextlib.suppress(OSError):
+                path.unlink()
+            self._fail("update_checksum")
+            raise JobError("update_checksum")
         try:
             if runtime.WINDOWS:
                 flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP

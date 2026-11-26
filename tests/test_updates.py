@@ -164,3 +164,46 @@ def test_update_endpoints(workspace, monkeypatch):
         response = client.post("/api/update/install", headers=HEADERS)
         assert response.status_code in (422, 501)
         assert client.post("/api/update/check").status_code == 403
+
+
+def test_asset_links_must_match_the_release_exactly(windows):
+    tricky = release()
+    tricky["assets"][0]["browser_download_url"] = BASE + "../../../../evil/" + NAME
+    assert updates.parse_release(tricky, current="1.3.0")["asset"] is None
+    other = release()
+    other["assets"][1]["browser_download_url"] = (
+        "https://github.com/djkvido/spotcheck/releases/download/v8.0.0/SHA256SUMS.txt"
+    )
+    assert updates.parse_release(other, current="1.3.0")["asset"] is None
+
+
+def test_a_file_changed_after_download_is_not_started(workspace, windows, monkeypatch):
+    serve(monkeypatch, release())
+    updater = updates.Updater(Bus())
+    updater.check(force=True)
+    updater.download()
+    assert wait(updater) == "ready"
+    (updates.folder() / NAME).write_bytes(b"tampered")
+    started = []
+    monkeypatch.setattr(updates.subprocess, "Popen", lambda cmd, **kw: started.append(cmd))
+    with pytest.raises(JobError, match="update_checksum"):
+        updater.install(lambda: None)
+    assert started == [] and not (updates.folder() / NAME).exists() and updater.phase == "failed"
+
+
+def test_a_broken_connection_fails_the_download_cleanly(workspace, windows, monkeypatch):
+    serve(monkeypatch, release())
+    real = updates._open
+
+    def broken(url, timeout=30):
+        if url.endswith(NAME):
+            raise updates.http.client.IncompleteRead(b"x", 10)
+        return real(url, timeout)
+
+    monkeypatch.setattr(updates, "_open", broken)
+    updater = updates.Updater(Bus())
+    updater.check(force=True)
+    updater.download()
+    assert wait(updater) == "failed" and updater.error == "update_download_failed"
+    updater.check(force=True)
+    assert updater.public()["phase"] == "failed"
