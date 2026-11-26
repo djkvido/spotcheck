@@ -629,3 +629,26 @@ def test_an_invalid_entry_queues_nothing(workspace, monkeypatch, tmp_path):
     with pytest.raises(JobError, match="download_invalid_url"):
         fetcher.add([{"url": VIDEO}, {"url": "ftp://x"}], {"mode": "video"}, tmp_path)
     assert fetcher.public() == []
+
+
+def test_formats_without_codecs_are_estimated_and_rate_limits_ask_to_wait(monkeypatch):
+    info = {
+        "id": "x",
+        "title": "Clip",
+        "width": 1280,
+        "height": 720,
+        "formats": [
+            {"format_id": "hd", "url": "https://cdn.example/hd.mp4", "ext": "mp4", "width": 1280, "height": 720}
+        ],
+    }
+    probed = probe_with(monkeypatch, info)("https://example.com/clip")
+    assert probed["heights"] == [720] and probed["video"] is True
+    song = {
+        "id": "y",
+        "title": "Song",
+        "formats": [{"format_id": "mp3", "url": "https://cdn.example/a.mp3", "ext": "mp3"}],
+    }
+    probed = probe_with(monkeypatch, song)("https://example.com/song")
+    assert probed["video"] is False and probed["audio"] is True
+    text = "ERROR: [youtube] x: Video unavailable. This content isn't available, try again later. Rate-limited"
+    assert downloader.failure(text, completed(1, "", text)) == "youtube_blocked"

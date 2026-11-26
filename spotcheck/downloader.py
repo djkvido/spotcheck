@@ -161,6 +161,8 @@ def audio_formats() -> list[str]:
 def failure(text: str, result: subprocess.CompletedProcess | None = None) -> str:
     if ytdlp.login_required(text):
         return "login_required"
+    if ytdlp.blocked(text):
+        return "youtube_blocked"
     known = next((code for code, pattern in FAILURES if pattern.search(text)), None)
     if known:
         return known
@@ -280,15 +282,25 @@ def _resolution(item: dict[str, Any]) -> int | None:
     return min(sides) if sides else None
 
 
+def _audio_only(f: dict[str, Any]) -> bool:
+    if f.get("vcodec") == "none":
+        return True
+    return f.get("vcodec") is None and (
+        f.get("audio_ext") not in (None, "none") or str(f.get("ext") or "").lower() in AUDIO_EXT.values()
+    )
+
+
+def _is_video(f: dict[str, Any]) -> bool:
+    return not _audio_only(f) and bool(_resolution(f))
+
+
 def _unknown_video(info: dict[str, Any]) -> bool:
     formats = info.get("formats") or [info]
-    return any(f.get("vcodec") is None and not _resolution(f) and f.get("url") for f in formats)
+    return any(not _audio_only(f) and not _resolution(f) and f.get("url") for f in formats)
 
 
 def _heights(info: dict[str, Any]) -> list[int]:
-    found = {
-        _resolution(f) for f in info.get("formats") or [] if f.get("vcodec") not in (None, "none") and _resolution(f)
-    }
+    found = {_resolution(f) for f in info.get("formats") or [] if _is_video(f)}
     if not found and _resolution(info):
         found.add(_resolution(info))
     return sorted(found, reverse=True)
@@ -320,8 +332,8 @@ def _pick(formats: list[dict[str, Any]], tiers: tuple[tuple[str, ...], ...], key
 def variants(info: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str, float]]:
     duration = info.get("duration")
     formats = info.get("formats") or []
-    video = [f for f in formats if f.get("vcodec") not in (None, "none") and _resolution(f)]
-    audio = [f for f in formats if f.get("vcodec") in (None, "none") and f.get("acodec") not in (None, "none")]
+    video = [f for f in formats if _is_video(f)]
+    audio = [f for f in formats if not _is_video(f) and f.get("acodec") not in (None, "none")]
     audio_sizes = {}
     for name, tiers in (("aac", (("mp4a",),)), ("opus", (("opus",),)), ("best", ())):
         picked = _pick(audio, tiers, "acodec")
@@ -331,6 +343,9 @@ def variants(info: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str, floa
     result = []
     for height in _heights(info):
         fitting = [f for f in video if _resolution(f) <= height]
+        if not fitting:
+            result.append({"height": height, "bytes": dict.fromkeys(CONTAINERS), "exact": False})
+            continue
         top = max(_resolution(f) for f in fitting)
         level = [f for f in fitting if _resolution(f) == top]
         best_fps = max(f.get("fps") or 0 for f in level)
