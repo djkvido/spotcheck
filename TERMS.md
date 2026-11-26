@@ -36,11 +36,12 @@ SpotCheck runs on your computer and only accepts connections from it. It has no 
 - the services that host your playlists and tracks (Spotify, YouTube, YouTube Music, SoundCloud, Bandcamp, Facebook, Instagram) to read track lists and download audio;
 - the sites of the links you paste in the Download tab, to read what is available and download it;
 - Deezer and the iTunes Search API for official previews and metadata, and the lyrics sites spotDL uses to add lyrics (Genius, AZLyrics, Musixmatch);
+- GitHub (api.github.com and github.com) about twice a day to find out whether a new version of SpotCheck has been released, and to download it when you ask for it;
 - PyPI (pypi.org) to show available updates of its components on the Dependencies page, and to download an update of yt-dlp when you ask for it;
 - GitHub (github.com) and the distribution sites of FFmpeg and Deno, only when you run SpotCheck from source and ask it to install FFmpeg or Deno;
 - GitHub (github.com) on Windows or ffmpeg.martin-riedl.de on macOS, only when you ask the converter to download its extended codecs.
 
-The app never updates or installs a component on its own. It tells you what it is going to download and from where, and starts only after you confirm it. When you run SpotCheck from source, its install and start scripts download the Python packages it needs from PyPI and, if they are missing, Python, FFmpeg and Deno from their official distribution channels. Downloaded components are third-party software under their own licenses.
+The app never updates itself or installs a component on its own. It tells you what it is going to download and from where, and starts only after you confirm it. A downloaded update of SpotCheck is installed only after its SHA-256 checksum matches the one published with the release. When you run SpotCheck from source, its install and start scripts download the Python packages it needs from PyPI and, if they are missing, Python, FFmpeg and Deno from their official distribution channels. Downloaded components are third-party software under their own licenses.
 
 ## 5. Your files
 

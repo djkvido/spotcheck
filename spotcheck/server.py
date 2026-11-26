@@ -30,8 +30,10 @@ from . import (
     fileops,
     origins,
     projects,
+    runtime,
     sources,
     terms,
+    updates,
 )
 from . import settings as settings_mod
 from .config import STATIC_DIR, paths
@@ -348,18 +350,27 @@ def create_app(automation: bool = True) -> FastAPI:
     engine = Engine(Library(on_save=on_save), bus)
     converter = Converter(bus)
     fetcher = Downloader(bus)
+    updater = updates.Updater(bus)
+    watching = {"started": False}
 
     def lib() -> Library:
         return engine.lib
 
-    updates: dict[str, Any] = {"ytdlp": None}
+    latest: dict[str, Any] = {"ytdlp": None}
 
     def check_ytdlp() -> None:
         try:
-            updates["ytdlp"] = deps.ytdlp_latest()
+            latest["ytdlp"] = deps.ytdlp_latest()
         except Exception:
-            updates["ytdlp"] = None
-        bus.emit({"type": "updates", "ytdlp": deps.ytdlp_update(updates["ytdlp"])})
+            latest["ytdlp"] = None
+        bus.emit({"type": "updates", "ytdlp": deps.ytdlp_update(latest["ytdlp"])})
+
+    def watch_updates() -> None:
+        if watching["started"]:
+            return
+        watching["started"] = True
+        threading.Thread(target=check_ytdlp, name="spotcheck-updates", daemon=True).start()
+        updater.start_watch()
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
@@ -367,13 +378,14 @@ def create_app(automation: bool = True) -> FastAPI:
         await asyncio.to_thread(convert.clean_inbox)
         await asyncio.to_thread(downloader.clean_workspace)
         if automation and terms.accepted():
-            threading.Thread(target=check_ytdlp, name="spotcheck-updates", daemon=True).start()
+            watch_updates()
         await asyncio.to_thread(lib().link_files)
         if automation:
             engine.start_automation()
         yield
         await asyncio.to_thread(converter.close)
         await asyncio.to_thread(fetcher.close)
+        updater.close()
         await asyncio.to_thread(lib().save)
         await asyncio.to_thread(sources.flush_index)
 
@@ -439,7 +451,8 @@ def create_app(automation: bool = True) -> FastAPI:
             "jobs": engine.jobs_public(),
             "logs": list(bus.logs)[-150:],
             "ffmpeg": analysis.ffmpeg_info(),
-            "ytdlp_update": deps.ytdlp_update(updates["ytdlp"]),
+            "ytdlp_update": deps.ytdlp_update(latest["ytdlp"]),
+            "app_update": updater.public(),
             "version": __version__,
             "terms": terms.public(),
         }
@@ -455,8 +468,32 @@ def create_app(automation: bool = True) -> FastAPI:
         terms.accept()
         engine.rescan_soon()
         if automation:
-            threading.Thread(target=check_ytdlp, name="spotcheck-updates", daemon=True).start()
+            watch_updates()
         return terms.public()
+
+    @app.post("/api/update/check")
+    async def check_update() -> dict[str, Any]:
+        return {"update": await asyncio.to_thread(updater.check, True)}
+
+    @app.post("/api/update/download")
+    async def download_update() -> dict[str, Any]:
+        try:
+            await asyncio.to_thread(updater.download)
+        except JobError as exc:
+            raise HTTPException(422, exc.code) from exc
+        return {"update": updater.public()}
+
+    @app.post("/api/update/install")
+    async def install_update(request: Request) -> dict[str, Any]:
+        shutdown = getattr(request.app.state, "shutdown", None)
+        if shutdown is None and runtime.WINDOWS:
+            raise HTTPException(501, "quit_unavailable")
+        loop = asyncio.get_running_loop()
+        try:
+            action = updater.install(lambda: loop.call_later(0.8, shutdown))
+        except JobError as exc:
+            raise HTTPException(422, exc.code) from exc
+        return {"action": action}
 
     @app.post("/api/quit")
     async def quit_app(request: Request) -> dict[str, Any]:

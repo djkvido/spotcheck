@@ -107,7 +107,7 @@ Everything SpotCheck needs is included (Python, FFmpeg with Chromaprint, Deno), 
 
 The installers are not yet signed with a code-signing certificate. On Windows, SmartScreen may show *Windows protected your PC*: choose **More info › Run anyway**. On macOS, the first start is blocked: open **System Settings › Privacy & Security** and choose **Open Anyway** next to SpotCheck.
 
-What changed in each version is listed in the [changelog](CHANGELOG.md). Every release lists the SHA-256 hash of each file and carries a signed [build provenance attestation](SECURITY.md#how-the-releases-are-built) proving that it was built by GitHub Actions from this repository.
+**Updates:** from version 1.3.0, SpotCheck tells you when a new version is released and shows what is new. On Windows one click downloads the installer, checks its SHA-256 checksum, installs it and starts SpotCheck again; on macOS the verified disk image opens for you. You can also check under Settings › About. What changed in each version is listed in the [changelog](CHANGELOG.md). Every release lists the SHA-256 hash of each file and carries a signed [build provenance attestation](SECURITY.md#how-the-releases-are-built) proving that it was built by GitHub Actions from this repository.
 
 SpotCheck opens in your browser at `http://127.0.0.1:8765/` and only accepts connections from your own computer. Starting it again while it runs only brings it up; the power button in the top bar stops it. The installer and the first start ask you to agree to the [Terms of Use](TERMS.md).
 
@@ -207,7 +207,7 @@ A file converted from a low-quality source therefore shows a cut well below what
 
 ## Privacy
 
-SpotCheck has no account, no analytics and no telemetry. Everything stays on your computer. The diagnostics report is only created and shown when you ask for it; home folder and user name are replaced in it, and nothing is sent anywhere. It only contacts the services it needs for your playlists: Spotify, YouTube, YouTube Music, SoundCloud or Bandcamp for track lists and audio, Deezer and the iTunes Search API for official previews and metadata, the lyrics sites spotDL uses (Genius, AZLyrics, Musixmatch), PyPI when the Dependencies page checks for updates, and GitHub or ffmpeg.martin-riedl.de when you download the extended codecs for the converter. The converter itself works offline. Updates and installations of components start only after you confirm them; see section 4 of the [Terms of Use](TERMS.md#4-connections-and-downloads).
+SpotCheck has no account, no analytics and no telemetry. Everything stays on your computer. The diagnostics report is only created and shown when you ask for it; home folder and user name are replaced in it, and nothing is sent anywhere. It only contacts the services it needs for your playlists: Spotify, YouTube, YouTube Music, SoundCloud or Bandcamp for track lists and audio, Deezer and the iTunes Search API for official previews and metadata, the lyrics sites spotDL uses (Genius, AZLyrics, Musixmatch), GitHub to find out whether a new version of SpotCheck was released, PyPI when the Dependencies page checks for updates, and GitHub or ffmpeg.martin-riedl.de when you download the extended codecs for the converter. The converter itself works offline. Updates and installations of components start only after you confirm them; see section 4 of the [Terms of Use](TERMS.md#4-connections-and-downloads).
 
 ## Legal notice
 

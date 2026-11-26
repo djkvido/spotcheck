@@ -36,11 +36,12 @@ SpotCheck běží na tvém počítači a přijímá spojení jen z něj. Nemá �
 - službám, na kterých jsou tvoje playlisty a skladby (Spotify, YouTube, YouTube Music, SoundCloud, Bandcamp, Facebook, Instagram), aby načetl seznamy skladeb a stáhl zvuk;
 - stránkám odkazů, které vložíš na záložce Stahování, aby zjistil, co je k dispozici, a stáhl to;
 - Deezeru a iTunes Search API kvůli oficiálním ukázkám a metadatům a ke stránkám s texty písní, které používá spotDL (Genius, AZLyrics, Musixmatch);
+- GitHubu (api.github.com a github.com) zhruba dvakrát denně, aby zjistil, jestli vyšla nová verze SpotChecku, a aby ji stáhl, když o to požádáš;
 - PyPI (pypi.org), aby na stránce Závislosti ukázal dostupné aktualizace svých součástí, a aby stáhl aktualizaci yt-dlp, když o ni požádáš;
 - GitHubu (github.com) a stránkám, ze kterých se distribuuje FFmpeg a Deno, jen když spouštíš SpotCheck ze zdrojového kódu a požádáš ho o instalaci FFmpeg nebo Deno;
 - GitHubu (github.com) ve Windows nebo ffmpeg.martin-riedl.de v macOS, jen když převodník požádáš o stažení rozšířených kodeků.
 
-Aplikace nikdy sama od sebe neaktualizuje ani neinstaluje žádnou součást. Vždy řekne, co a odkud se chystá stáhnout, a začne až po tvém potvrzení. Když spouštíš SpotCheck ze zdrojového kódu, jeho instalační a spouštěcí skripty stáhnou potřebné balíčky Pythonu z PyPI a pokud chybí, také Python, FFmpeg a Deno z jejich oficiálních distribučních kanálů. Stažené součásti jsou software třetích stran pod vlastními licencemi.
+Aplikace se nikdy sama od sebe neaktualizuje ani neinstaluje žádnou součást. Vždy řekne, co a odkud se chystá stáhnout, a začne až po tvém potvrzení. Stažená aktualizace SpotChecku se nainstaluje jen tehdy, když její kontrolní součet SHA-256 odpovídá tomu, který je zveřejněný u vydání. Když spouštíš SpotCheck ze zdrojového kódu, jeho instalační a spouštěcí skripty stáhnou potřebné balíčky Pythonu z PyPI a pokud chybí, také Python, FFmpeg a Deno z jejich oficiálních distribučních kanálů. Stažené součásti jsou software třetích stran pod vlastními licencemi.
 
 ## 5. Tvoje soubory
 

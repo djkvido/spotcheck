@@ -75,6 +75,7 @@ Name: "{autodesktop}\SpotCheck"; Filename: "{app}\runtime\SpotCheck.exe"; Parame
 
 [Run]
 Filename: "{app}\runtime\SpotCheck.exe"; Parameters: "-m spotcheck --packaged"; WorkingDir: "{app}"; Description: "{cm:LaunchProgram,SpotCheck}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\runtime\SpotCheck.exe"; Parameters: "-m spotcheck --packaged"; WorkingDir: "{app}"; Flags: nowait; Check: ShouldRelaunch
 
 [UninstallRun]
 Filename: "{app}\runtime\python.exe"; Parameters: "-m spotcheck --packaged --quit"; Flags: runhidden waituntilterminated; RunOnceId: "QuitSpotCheck"
@@ -90,4 +91,9 @@ begin
   if FileExists(ExpandConstant('{app}\runtime\python.exe')) then
     Exec(ExpandConstant('{app}\runtime\python.exe'), '-m spotcheck --packaged --quit', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Result := '';
+end;
+
+function ShouldRelaunch: Boolean;
+begin
+  Result := WizardSilent and (ExpandConstant('{param:relaunch|0}') = '1');
 end;

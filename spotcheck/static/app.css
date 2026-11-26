@@ -188,6 +188,14 @@ input[type="checkbox"].switch:checked::after { left: 20px; background: var(--on-
 .statusline.error { color: var(--bad); }
 .banner { flex: none; display: none; align-items: center; gap: 14px; margin: 0 16px 10px; padding: 9px 14px; border-radius: var(--r-md); background: var(--accent); color: var(--on-accent); font-weight: 600; border-bottom: 2px solid var(--accent-pressed); }
 .banner.show { display: flex; }
+.update-meter { flex: 0 1 160px; height: 6px; border-radius: 3px; background: rgba(0, 0, 0, .18); overflow: hidden; }
+.update-meter i { display: block; height: 100%; background: var(--on-accent); transition: width .3s; }
+.update-notes { max-height: 300px; overflow: auto; margin: 10px 0; padding: 10px 14px; border: 1px solid var(--line); border-radius: var(--r-md); background: rgba(127, 127, 127, .06); font-size: 13px; }
+.update-notes h4 { margin: 10px 0 4px; font-size: 13px; }
+.update-notes h4:first-child { margin-top: 0; }
+.update-notes ul { margin: 0 0 6px; padding-left: 18px; }
+.update-notes li { margin: 3px 0; }
+.kv dd.about-update { font-family: inherit; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .banner .btn { background: rgba(0, 0, 0, .14); border-color: transparent; color: var(--on-accent); }
 .banner .btn:hover:not(:disabled) { background: rgba(0, 0, 0, .24); color: var(--on-accent); border-color: transparent; }
 

@@ -13,6 +13,7 @@ Notable changes of each release. The format follows [Keep a Changelog](https://k
 - A download queue that runs three downloads at a time with progress, speed and remaining time, and can be paused, limited in speed, cancelled and retried. Finished items can be played or shown in their folder, and the real quality is shown, with a note when the site offered less than asked for or no subtitles.
 - Before starting, the total size, the destination and the free space on that disk are shown, with a warning when the space is not enough. The progress is also shown in the window title, and an optional notification announces the end of a batch.
 - Clear explanations of why a download failed: private or login-only content, removed videos, region restrictions, live streams that have not started, unsupported links and sites that ask to wait. A site that asks to wait is retried after a pause.
+- **Updates from the app.** SpotCheck checks GitHub for a new release and shows what is new. On Windows one click downloads the installer, checks its SHA-256 checksum, installs the update and starts SpotCheck again; on macOS the verified disk image is opened for you. Nothing is downloaded or installed without your confirmation. Versions before 1.3.0 do not have this yet, so this one has to be installed by hand once.
 - Public **Facebook and Instagram** videos and reels can be added to the library as single songs. The title is taken from the caption, without counters, hashtags and mentions, and a missing length is read from the downloaded file.
 
 ### Changed

@@ -370,20 +370,35 @@ function renderTopbar() {
     <span class="extra" title="${te("sys.savedTitle")}">${te("sys.saved", { time: saved })}</span>`;
 }
 
+function appUpdateBanner(u) {
+  const button = (action, key) => `<button class="btn sm" type="button" data-update="${action}">${te(key)}</button>`;
+  const percent = Math.floor((u.progress || 0) * 100);
+  if (u.phase === "downloading") return `<span>${te("update.banner.downloading", { latest: u.version, percent })}</span><span class="update-meter"><i style="width:${percent}%"></i></span><span class="spacer"></span>`;
+  if (u.phase === "verifying") return `<span>${te("update.banner.verifying", { latest: u.version })}</span><span class="spacer"></span>`;
+  if (u.phase === "installing") return `<span>${te("update.banner.installing", { latest: u.version })}</span><span class="spacer"></span>`;
+  if (u.phase === "ready") return `<span>${te(u.platform === "windows" ? "update.banner.ready" : "update.banner.readyMac", { latest: u.version })}</span><span class="spacer"></span>${button("install", u.platform === "windows" ? "update.install" : "update.openImage")}`;
+  if (u.phase === "failed") return `<span>${te("update.banner.failed", { latest: u.version, error: t(`error.${u.error}`) })}</span><span class="spacer"></span>${button("details", "update.retry")}`;
+  return `<span>${te("update.banner.available", { latest: u.version, current: u.current })}</span><span class="spacer"></span>${button("details", "update.whatsNew")}${button("later", "update.later")}`;
+}
+
 function renderBanner() {
   const ff = state.ffmpeg;
   let key = "";
   if (ff && !ff.found) key = "banner.noFfmpeg";
   else if (ff && !ff.chromaprint) key = "banner.noChromaprint";
   const banner = $("#banner");
-  const update = state.ytdlpUpdate;
-  if (!key && update) {
+  const app = state.appUpdate && state.appUpdate.version !== state.updateLater ? state.appUpdate : null;
+  const shownApp = app && (app.phase !== "idle" || !key) ? app : null;
+  const update = shownApp ? null : state.ytdlpUpdate;
+  if (shownApp) {
+    banner.innerHTML = appUpdateBanner(shownApp);
+  } else if (!key && update) {
     const installing = Object.values(state.jobs).some((j) => j.kind === "deps" && !TERMINAL.has(j.state));
     banner.innerHTML = `<span>${te("banner.ytdlpUpdate", { current: update.current, latest: update.latest })}</span><span class="spacer"></span><button class="btn sm" type="button" data-action="update-ytdlp" ${installing ? "disabled" : ""}>${te("banner.ytdlpUpdateButton")}</button>`;
   } else {
     banner.innerHTML = key ? `<span>${te(key)}</span><span class="spacer"></span><button class="btn sm" type="button" data-action="deps">${te("banner.open")}</button>` : "";
   }
-  banner.classList.toggle("show", Boolean(key || update));
+  banner.classList.toggle("show", Boolean(key || update || shownApp));
 }
 
 function renderPlaylists() {
@@ -1682,6 +1697,74 @@ function codecsRowHtml(c) {
     <span class="ver">${escapeHtml(c.installed ? c.version : fmtBytes(c.size))}</span>${action}</div>`;
 }
 
+function updateNotesHtml(text) {
+  const inline = (s) => escapeHtml(s)
+    .replace(/\[([^\]]+)\]\((https:\/\/[^)\s]+)\)/g, "$1")
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/\*([^*]+)\*/g, "<em>$1</em>")
+    .replace(/`([^`]+)`/g, "<code>$1</code>");
+  const out = [];
+  let list = false;
+  for (const raw of String(text || "").split(/\r?\n/)) {
+    const line = raw.trim();
+    const item = /^[-*] (.*)$/.exec(line);
+    if (!item && list) { out.push("</ul>"); list = false; }
+    if (item) {
+      if (!list) { out.push("<ul>"); list = true; }
+      out.push(`<li>${inline(item[1])}</li>`);
+    } else if (/^#{1,4} /.test(line)) {
+      out.push(`<h4>${inline(line.replace(/^#+ /, ""))}</h4>`);
+    } else if (line) {
+      out.push(`<p>${inline(line)}</p>`);
+    }
+  }
+  if (list) out.push("</ul>");
+  return out.join("");
+}
+
+async function openUpdateDialog() {
+  const u = state.appUpdate;
+  if (!u) return;
+  const how = !u.installable ? (u.packaged ? "update.howManual" : "update.howSource") : u.platform === "windows" ? "update.howWindows" : "update.howMac";
+  const html = para(te("update.intro", { latest: u.version, current: u.current }))
+    + (u.notes ? `<div class="update-notes">${updateNotesHtml(u.notes)}</div>` : "")
+    + para(te(how, { size: u.size ? fmtBytes(u.size) : "" }));
+  const ok = !u.installable ? t("update.openPage") : u.platform === "windows" ? t("update.downloadInstall") : t("update.download");
+  if (!await confirmDialog(t("update.title", { latest: u.version }), html, ok)) return;
+  if (!u.installable) { window.open(u.page, "_blank", "noopener"); return; }
+  const { update } = await api("/api/update/download", "POST");
+  state.appUpdate = update;
+  renderBanner();
+}
+
+async function onUpdateAction(action, el) {
+  try {
+    if (action === "details") await openUpdateDialog();
+    else if (action === "later") { state.updateLater = state.appUpdate?.version; renderBanner(); }
+    else if (action === "install") {
+      el.disabled = true;
+      const { action: done } = await api("/api/update/install", "POST");
+      say(t(done === "restart" ? "update.restarting" : "update.imageOpened"));
+    } else if (action === "check") {
+      el.disabled = true;
+      const { update } = await api("/api/update/check", "POST");
+      state.appUpdate = update;
+      renderBanner();
+      if ($("#dlg-settings").open && state.settings.page === "about") renderSettings();
+      if (update) await openUpdateDialog(); else say(t("update.upToDate", { current: state.version }));
+    }
+  } catch (error) {
+    sayError(error);
+  } finally {
+    if (el.isConnected) el.disabled = false;
+  }
+}
+
+document.addEventListener("click", (event) => {
+  const el = event.target.closest("[data-update]");
+  if (el && !el.disabled) onUpdateAction(el.dataset.update, el);
+});
+
 function aboutPageHtml() {
   const p = state.project || {};
   const deps = state.settings.deps;
@@ -1689,6 +1772,9 @@ function aboutPageHtml() {
     <p class="page-intro">${te("about.text")}</p>
     <div class="group"><div class="g-body" style="padding:12px 14px"><dl class="kv">
       <dt>${te("about.version")}</dt><dd>SpotCheck ${escapeHtml(state.version)}</dd>
+      <dt>${te("about.updates")}</dt><dd class="about-update">${state.appUpdate
+        ? `${te("update.available", { latest: state.appUpdate.version })} <button class="btn sm" type="button" data-update="details">${te("update.whatsNew")}</button>`
+        : `${te("update.current")} <button class="btn sm" type="button" data-update="check">${te("update.check")}</button>`}</dd>
       <dt>${te("about.project")}</dt><dd>${escapeHtml(p.name || "")}</dd>
       <dt>${te("about.music")}</dt><dd>${escapeHtml(p.music || "")}</dd>
       <dt>${te("about.data")}</dt><dd>${escapeHtml(p.data || "")}</dd>
@@ -2080,6 +2166,7 @@ async function loadState() {
   state.meta = data.settings_meta;
   state.ffmpeg = data.ffmpeg;
   state.ytdlpUpdate = data.ytdlp_update;
+  state.appUpdate = data.app_update;
   state.version = data.version;
   state.terms = data.terms;
   state.logs = data.logs;
@@ -2144,6 +2231,11 @@ function connectEvents() {
       case "updates":
         state.ytdlpUpdate = event.ytdlp;
         renderBanner();
+        break;
+      case "app_update":
+        state.appUpdate = event.update;
+        renderBanner();
+        if ($("#dlg-settings").open && state.settings.page === "about") renderSettings();
         break;
       case "settings":
         state.library.settings = event.settings;
