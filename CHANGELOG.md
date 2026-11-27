@@ -4,6 +4,8 @@ Notable changes of each release. The format follows [Keep a Changelog](https://k
 
 ## Unreleased
 
+## 1.3.0 - 2026-11-27
+
 ### Added
 
 - **A Download tab** for videos and sound from YouTube, YouTube Music, Facebook, Instagram, SoundCloud, Bandcamp, Vimeo and over a thousand other sites. Paste one or more links anywhere on the tab and each one is analysed at once: its title, length, available qualities, subtitles and the estimated size for the chosen format are shown before anything is downloaded.
